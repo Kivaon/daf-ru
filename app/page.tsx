@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { PdfDafViewer } from "./PdfDafViewer";
 import { BEKHOROT_2A_SEGMENTS } from "./bekhorot2a";
 import { BEKHOROT_2A_COMMENTARY } from "./bekhorot2aCommentary";
+import HomeClient from "./HomeClient";
 
-export default function Home() {
+function LegacyHome() {
   const [bounds, setBounds] = useState<[number, number]>([2, 2]);
   const [dictionaryOpen, setDictionaryOpen] = useState(false);
   const [words, setWords] = useState<string[]>([]);
@@ -96,3 +97,5 @@ export default function Home() {
     {dictionaryOpen && <div className="drawerBackdrop" onClick={() => setDictionaryOpen(false)}><aside className="drawer" onClick={(event) => event.stopPropagation()}><div className="drawerHead"><div><small>ЛИЧНАЯ КОЛЛЕКЦИЯ</small><h2>Словарь</h2></div><button onClick={() => setDictionaryOpen(false)} aria-label="Закрыть">×</button></div>{words.length ? <div className="wordList">{words.map((word) => <div className="word" key={word}><span lang="he" dir="rtl">{word}</span><small>Бехорот 2а</small><button onClick={() => { const next = words.filter(item => item !== word); setWords(next); localStorage.setItem("havruta-dictionary", JSON.stringify(next)); }}>Удалить</button></div>)}</div> : <div className="empty"><b>Пока пусто</b><p>Выделите выражение в оригинале и нажмите «В словарь».</p></div>}</aside></div>}
   </main>;
 }
+
+export default HomeClient;

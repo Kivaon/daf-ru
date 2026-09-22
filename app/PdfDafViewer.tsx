@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BEKHOROT_2A_SEGMENTS } from "./bekhorot2a";
-import { BEKHOROT_2A_COMMENTARY, CommentaryLink } from "./bekhorot2aCommentary";
+import { CommentaryLink } from "./bekhorot2aCommentary";
+
+export type DafSegment = { id: string; kind: string; text: string };
 
 type TextRect = { left: number; top: number; width: number; height: number };
 type WordRect = TextRect & { word: string; line: number };
@@ -39,9 +40,9 @@ function editionWords(text: string) {
   });
 }
 
-function alignSefariaToPdf(pdfWords: WordRect[]) {
+function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
   const sourceChars: Array<{ char: string; segment: number }> = [];
-  BEKHOROT_2A_SEGMENTS.forEach((segment, segmentIndex) => {
+  segments.forEach((segment, segmentIndex) => {
     editionWords(segment.text).forEach((word) => Array.from(word).forEach((char) => sourceChars.push({ char, segment: segmentIndex })));
   });
   const pdfChars: Array<{ char: string; word: number }> = [];
@@ -61,9 +62,9 @@ function alignSefariaToPdf(pdfWords: WordRect[]) {
   }
   let end = 0;
   for (let j = 1; j <= n; j++) if (costs[m * width + j] < costs[m * width + end]) end = j;
-  const matchedWords = BEKHOROT_2A_SEGMENTS.map(() => new Set<number>());
-  const exact = BEKHOROT_2A_SEGMENTS.map(() => 0);
-  const totals = BEKHOROT_2A_SEGMENTS.map(() => 0);
+  const matchedWords = segments.map(() => new Set<number>());
+  const exact = segments.map(() => 0);
+  const totals = segments.map(() => 0);
   sourceChars.forEach(({ segment }) => totals[segment]++);
   let i = m, j = end;
   while (i > 0) {
@@ -76,12 +77,13 @@ function alignSefariaToPdf(pdfWords: WordRect[]) {
     } else if (direction === 1 || j === 0) i--;
     else j--;
   }
-  if (exact.reduce((sum, value) => sum + value, 0) / totals.reduce((sum, value) => sum + value, 0) < .84) {
-    throw new Error("Текст листа не прошёл общую сверку с Sefaria");
+  const overallRatio = exact.reduce((sum, value) => sum + value, 0) / totals.reduce((sum, value) => sum + value, 0);
+  if (overallRatio < .84) {
+    throw new Error(`Текст листа не прошёл общую сверку с Sefaria (${Math.round(overallRatio * 100)}%)`);
   }
   const blocks: Record<string, LocatedBlock> = {};
   let previousEnd = -1;
-  BEKHOROT_2A_SEGMENTS.forEach((segment, segmentIndex) => {
+  segments.forEach((segment, segmentIndex) => {
     const matched = [...matchedWords[segmentIndex]].sort((a, b) => a - b);
     if (!matched.length || exact[segmentIndex] / totals[segmentIndex] < .70) throw new Error(`Реплика Sefaria ${segment.id} не прошла проверку`);
     const first = matched[0], last = matched.at(-1)!;
@@ -176,14 +178,16 @@ function locateDiburInGemara(words: WordRect[], dibur: string) {
   return { words: locatedWords, lines };
 }
 
-export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: {
+export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pdfUrl = "/bekhorot-2a.pdf", label = "Бехорот 2а", segments = [], commentary = [] }: {
   zoom: number; selectedBlock: string; onSelect: (blockId: string, word: string) => void; onBlockLocated: () => void;
+  pdfUrl?: string; label?: string; segments?: DafSegment[]; commentary?: CommentaryLink[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
   const [size, setSize] = useState({ width: 644, height: 993 });
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
+  const [alignmentWarning, setAlignmentWarning] = useState("");
   const [blocks, setBlocks] = useState<Record<string, LocatedBlock>>({});
   const [commentaryBlocks, setCommentaryBlocks] = useState<Record<string, LocatedBlock>>({});
   const [hoveredBlock, setHoveredBlock] = useState<string | null>(null);
@@ -194,8 +198,8 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
     let cancelled = false;
     async function renderPdf() {
       try {
-        setStatus("loading"); setErrorMessage("");
-        const [pdfjsApi, response] = await Promise.all([loadPdfJs(), fetch("/bekhorot-2a.pdf?v=2", { cache: "no-store", credentials: "same-origin" })]);
+        setStatus("loading"); setErrorMessage(""); setAlignmentWarning("");
+        const [pdfjsApi, response] = await Promise.all([loadPdfJs(), fetch(pdfUrl, { cache: "force-cache", credentials: "same-origin" })]);
         if (!response.ok) throw new Error(`PDF request failed: ${response.status}`);
         pdfjsApi.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js?v=3";
         const pdf = await pdfjsApi.getDocument({ data: new Uint8Array(await response.arrayBuffer()) }).promise as {
@@ -225,14 +229,19 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
           })
           .filter((word) => normalizeHebrew(word.word))
           .sort((first, second) => second.line - first.line || second.left - first.left);
-        const pdfWords = makeWords((item) => item.transform[4] >= 204 && item.transform[4] <= 405 && item.transform[5] > 600 && item.transform[5] < 1080);
+        const pdfWords = makeWords((item) => item.transform[4] >= 204 && item.transform[4] <= 405 && item.transform[5] > 120 && item.transform[5] < 1080);
         const rashiWords = makeWords((item) => item.transform[4] > 400 && item.transform[5] > 120 && item.transform[5] < 1080);
         const tosafotWords = makeWords((item) => item.transform[4] < 212 && item.transform[5] > 120 && item.transform[5] < 1080);
-        const locatedBlocks = alignSefariaToPdf(pdfWords);
-        const locatedCommentary = {
-          ...alignDiburimToPdf(rashiWords, BEKHOROT_2A_COMMENTARY.filter((comment) => comment.commentator === "Rashi")),
-          ...alignDiburimToPdf(tosafotWords, BEKHOROT_2A_COMMENTARY.filter((comment) => comment.commentator === "Tosafot")),
-        };
+        let locatedBlocks: Record<string, LocatedBlock> = {}, locatedCommentary: Record<string, LocatedBlock> = {}, mappingError = "";
+        try {
+          locatedBlocks = alignSefariaToPdf(pdfWords, segments);
+          locatedCommentary = {
+            ...alignDiburimToPdf(rashiWords, commentary.filter((comment) => comment.commentator === "Rashi")),
+            ...alignDiburimToPdf(tosafotWords, commentary.filter((comment) => comment.commentator === "Tosafot")),
+          };
+        } catch (reason) {
+          mappingError = reason instanceof Error ? reason.message : String(reason);
+        }
         if (cancelled || !canvasRef.current) return;
         const canvas = canvasRef.current;
         const ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -244,7 +253,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
         if (!context) throw new Error("Canvas unavailable");
         const task = page.render({ canvas, canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0] });
         renderTaskRef.current = task; await task.promise;
-        if (!cancelled) { setStatus("ready"); onBlockLocated(); }
+        if (!cancelled) { setStatus("ready"); setAlignmentWarning(mappingError); if (!mappingError) onBlockLocated(); }
       } catch (error) {
         if (!cancelled && (error as { name?: string }).name !== "RenderingCancelledException") {
           console.error("PDF rendering failed", error); setErrorMessage(error instanceof Error ? error.message : String(error)); setStatus("error");
@@ -253,18 +262,19 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
     }
     renderPdf();
     return () => { cancelled = true; renderTaskRef.current?.cancel(); };
-  }, [zoom, onBlockLocated]);
+  }, [zoom, onBlockLocated, pdfUrl, segments, commentary]);
 
   const selected = blocks[selectedBlock];
   const preview = hoveredBlock && hoveredBlock !== selectedBlock ? blocks[hoveredBlock] : null;
-  const linkedComments = BEKHOROT_2A_COMMENTARY.filter((comment) => comment.base === selectedBlock);
+  const linkedComments = commentary.filter((comment) => comment.base === selectedBlock);
   const activeComment = hoveredComment ?? pinnedComment;
   const activeCommentary = linkedComments.find((comment) => comment.ref === activeComment);
   const gemaraCue = activeCommentary && selected ? locateDiburInGemara(selected.words, activeCommentary.dibur) : null;
   return <div className="pdfStage" style={{ width: size.width, height: size.height }}>
-    <canvas ref={canvasRef} aria-label="Оригинальный PDF, Бехорот 2а" />
+    <canvas ref={canvasRef} aria-label={`Оригинальный PDF, ${label}`} />
     {status === "loading" && <div className="pdfStatus">Загружаем оригинальный PDF…</div>}
-    {status === "error" && <div className="pdfStatus error">Не удалось открыть PDF.<small>{errorMessage}</small><a href="/bekhorot-2a.pdf">Открыть оригинал</a></div>}
+    {status === "error" && <div className="pdfStatus error">Не удалось связать лист с текстом.<small>{errorMessage}</small><a href={pdfUrl}>Открыть оригинал</a></div>}
+    {status === "ready" && alignmentWarning && <div className="alignmentWarning">Лист открыт, интерактивная разметка отключена: {alignmentWarning}</div>}
     {status === "ready" && <div className="pdfInteraction" aria-label="Интерактивный слой оригинального листа" data-active-comment={activeComment ?? ""} data-gemara-cue={gemaraCue ? "yes" : "no"}>
       {selected?.lines.map((rect, index) => <span key={`selected-${index}`} className="textHighlight selectedHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
       {preview?.lines.map((rect, index) => <span key={`preview-${index}`} className="textHighlight hoverHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
