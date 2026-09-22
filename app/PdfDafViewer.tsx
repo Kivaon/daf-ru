@@ -14,6 +14,7 @@ export function PdfDafViewer({ zoom, onSelect }: { zoom: number; onSelect: () =>
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
   const [size, setSize] = useState({ width: 644, height: 993 });
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -21,8 +22,9 @@ export function PdfDafViewer({ zoom, onSelect }: { zoom: number; onSelect: () =>
     async function renderPdf() {
       try {
         setStatus("loading");
+        setErrorMessage("");
         const [pdfjs, response] = await Promise.all([
-          import("pdfjs-dist"),
+          import("pdfjs-dist/legacy/build/pdf.mjs"),
           fetch("/bekhorot-2a.pdf?v=2", { cache: "no-store", credentials: "same-origin" }),
         ]);
         if (!response.ok) throw new Error(`PDF request failed: ${response.status}`);
@@ -56,6 +58,7 @@ export function PdfDafViewer({ zoom, onSelect }: { zoom: number; onSelect: () =>
       } catch (error) {
         if (!cancelled && (error as { name?: string }).name !== "RenderingCancelledException") {
           console.error("PDF rendering failed", error);
+          setErrorMessage(error instanceof Error ? error.message : String(error));
           setStatus("error");
         }
       }
@@ -68,7 +71,7 @@ export function PdfDafViewer({ zoom, onSelect }: { zoom: number; onSelect: () =>
   return <div className="pdfStage" style={{ width: size.width, height: size.height }}>
     <canvas ref={canvasRef} aria-label="Оригинальный PDF, Бехорот 2а" />
     {status === "loading" && <div className="pdfStatus">Загружаем оригинальный PDF…</div>}
-    {status === "error" && <div className="pdfStatus error">Не удалось открыть PDF. <a href="/bekhorot-2a.pdf">Открыть оригинал</a></div>}
+    {status === "error" && <div className="pdfStatus error">Не удалось открыть PDF.<small>{errorMessage}</small><a href="/bekhorot-2a.pdf">Открыть оригинал</a></div>}
     {status === "ready" && <div className="pdfInteraction" aria-label="Интерактивный слой текста Гемары">
       {highlightLines.map((line, index) => <button
         key={index}
