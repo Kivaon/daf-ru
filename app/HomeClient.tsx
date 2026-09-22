@@ -25,6 +25,7 @@ export default function HomeClient() {
   const [dictionaryOpen, setDictionaryOpen] = useState(false);
   const [words, setWords] = useState<string[]>([]);
   const [picked, setPicked] = useState<{ text:string; x:number; y:number } | null>(null);
+  const [chatgptMode, setChatgptMode] = useState(false);
 
   const tractate = useMemo(() => tractateBySefaria(tractateTitle), [tractateTitle]);
   const pageKey = `${daf}${side}`;
@@ -34,6 +35,7 @@ export default function HomeClient() {
   const isLast = daf === tractate.lastDaf && side === tractate.lastSide;
 
   useEffect(() => {
+    setChatgptMode(new URLSearchParams(window.location.search).get("chatgpt") === "1" && window.parent !== window);
     try {
       const saved = JSON.parse(localStorage.getItem(POSITION_KEY) || "null");
       if (saved && TRACTATES.some((item) => item.sefaria === saved.tractate)) {
@@ -108,6 +110,10 @@ export default function HomeClient() {
 
   const captureSelection = () => { const selection=window.getSelection(), text=selection?.toString().trim() || ""; if(text && text.length<80 && /[\u0590-\u05FF]/.test(text)){ const rect=selection?.rangeCount?selection.getRangeAt(0).getBoundingClientRect():null; setPicked({text,x:Math.min(window.innerWidth-170,rect?.left||40),y:(rect?.bottom||90)+8}); } };
   const saveWord = () => { if(!picked)return; const next=words.includes(picked.text)?words:[picked.text,...words]; setWords(next); localStorage.setItem("havruta-dictionary",JSON.stringify(next)); setPicked(null); };
+  const generateWithChatGPT = () => {
+    if (!selected) return;
+    window.parent.postMessage({ type:"dafru.generate", payload:{ tractate:tractate.ru, sefariaTractate:tractate.sefaria, ref:selectedBlock, kind:selected.kind, original:selected.text, rashi:rashi.map((item)=>({ref:item.ref,original:item.text})), tosafot:tosafot.map((item)=>({ref:item.ref,original:item.text})) } }, "*");
+  };
 
   return <main>
     <header className="topbar"><div className="brand"><span className="brandMark">דף</span><span>Daf-Ru</span></div><div className="progress"><span>{tractate.ru}</span><strong>{daf}{side === "a" ? "а" : "б"}</strong><span className="status"><i/> Позиция сохранена</span></div><button className="iconButton" onClick={()=>setDictionaryOpen(true)} aria-label="Открыть словарь">⌘ <span>Словарь</span>{words.length>0&&<b>{words.length}</b>}</button></header>
@@ -118,7 +124,7 @@ export default function HomeClient() {
     </aside><article className="studyPane" onMouseUp={captureSelection}>
       <div className="studyNavigation"><div><span>{tractate.ru}</span><b>{daf}{side==="a"?"а":"б"}</b></div><nav aria-label="Соседние страницы">{nearbyPages.map((value)=><button key={value} className={value===pageKey?"active":""} disabled={value===pageKey} onClick={()=>choosePage(value)}>{value.replace("a","а").replace("b","б")}</button>)}</nav></div>
       {status!=="ready"||!blockLocated?<div className="studyWaiting"><span>{label}</span><h2>Связываем оригинальный лист с текстом Sefaria…</h2><p>Разбор появится после проверки соответствия реплик странице.</p></div>:<>
-      <section className="analysisCard gemaraCard"><div className="cardTitle"><span>{savedArticle?"01":"•"}</span><div><small>{selected?.kind.toUpperCase()} · {selectedBlock}</small><h2>{savedArticle?"Почему необходимы оба случая?":"Разбор пока не сохранён"}</h2></div></div>{savedArticle&&<div className="sourceBadge"><b>DAF-RU</b><span>редакционная версия</span><time>22.09.2026</time></div>}<div className="hebrew" lang="he" dir="rtl">{selected?.text}</div>{savedArticle?<><div className="rule"/><h3>Точный перевод</h3><p>Они необходимы. Ведь если бы учили только о покупающем, я бы сказал: это потому, что он приводит её к святости. Но продающий, который выводит её из святости, — можно было бы сказать: оштрафуем его. Поэтому сообщается нам, что это не так.</p></>:<div className="explanation"><span>Источник</span><p>Проверенный оригинал из Sefaria. Перевод и объяснение пока не сохранены.</p></div>}</section>
+      <section className="analysisCard gemaraCard"><div className="cardTitle"><span>{savedArticle?"01":"•"}</span><div><small>{selected?.kind.toUpperCase()} · {selectedBlock}</small><h2>{savedArticle?"Почему необходимы оба случая?":"Разбор пока не сохранён"}</h2></div></div>{savedArticle&&<div className="sourceBadge"><b>DAF-RU</b><span>редакционная версия</span><time>22.09.2026</time></div>}{chatgptMode&&<button className="aiGenerateButton" onClick={generateWithChatGPT}>Создать статью с AI</button>}<div className="hebrew" lang="he" dir="rtl">{selected?.text}</div>{savedArticle?<><div className="rule"/><h3>Точный перевод</h3><p>Они необходимы. Ведь если бы учили только о покупающем, я бы сказал: это потому, что он приводит её к святости. Но продающий, который выводит её из святости, — можно было бы сказать: оштрафуем его. Поэтому сообщается нам, что это не так.</p></>:<div className="explanation"><span>Источник</span><p>Проверенный оригинал из Sefaria. Перевод и объяснение пока не сохранены.</p></div>}</section>
       {rashi.length>0&&<><div className="commentaryHeading"><span>Раши к этой реплике</span><i>{rashi.length}</i></div>{rashi.map((item)=><section className="analysisCard sourceCommentCard rashiSourceCard" key={item.ref}><div className="commentMeta"><b>РАШИ</b><span>{item.ref}</span></div><div className="hebrew" lang="he" dir="rtl">{item.text}</div></section>)}</>}{tosafot.length>0&&<><div className="commentaryHeading tosafotHeading"><span>Тосафот к этой реплике</span><i>{tosafot.length}</i></div>{tosafot.map((item)=><section className="analysisCard sourceCommentCard tosafotCard" key={item.ref}><div className="commentMeta"><b>ТОСАФОТ</b><span>{item.ref}</span></div><div className="hebrew" lang="he" dir="rtl">{item.text}</div></section>)}</>}{linked.length===0&&<div className="noCommentary">Sefaria не связывает с этой репликой комментарии Раши или Тосафот.</div>}</>}
     </article></section>
     {picked&&<button className="saveSelection" style={{left:picked.x,top:picked.y}} onMouseDown={(e)=>e.preventDefault()} onClick={saveWord}>＋ В словарь</button>}
