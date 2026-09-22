@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PdfDafViewer } from "./PdfDafViewer";
 
 const segments = [
@@ -17,6 +17,8 @@ export default function Home() {
   const [words, setWords] = useState<string[]>([]);
   const [picked, setPicked] = useState<{ text: string; x: number; y: number } | null>(null);
   const [zoom, setZoom] = useState(0.9);
+  const [blockLocated, setBlockLocated] = useState(false);
+  const locateBlock = useCallback(() => setBlockLocated(true), []);
 
   useEffect(() => {
     const savedBounds = localStorage.getItem("havruta-position");
@@ -54,11 +56,12 @@ export default function Home() {
       <aside className="sourcePane dafPane">
         <div className="paneHeading"><div><span className="eyebrow">ОРИГИНАЛЬНЫЙ ЛИСТ</span><h1>Бехорот <b>2а</b></h1></div><span className="verified">Оригинальный PDF</span></div>
         <div className="dafToolbar"><div><span className="currentKey"><i /> Текущее место</span><span className="hint">Нажмите на отмеченный фрагмент</span></div><div className="zoomControls"><button onClick={() => setZoom(value => Math.max(.6, value - .15))} aria-label="Уменьшить">−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(value => Math.min(1.8, value + .15))} aria-label="Увеличить">+</button></div></div>
-        <div className="dafViewport"><PdfDafViewer zoom={zoom} onSelect={() => setBounds([1, 2])} /></div>
+        <div className="dafViewport"><PdfDafViewer zoom={zoom} onSelect={() => setBounds([1, 2])} onBlockLocated={locateBlock} /></div>
         <div className="pageGuide"><span><b>Центр</b> Мишна и Гемара</span><span><b>Интерактивно</b> Пока только Гемара</span><span><b>Источник</b> HebrewBooks</span><a href="/bekhorot-2a.pdf" target="_blank" rel="noreferrer">Открыть оригинальный PDF ↗</a></div>
       </aside>
 
       <article className="studyPane" onMouseUp={captureSelection}>
+        {!blockLocated ? <div className="studyWaiting"><span>Лист определяет разбор</span><h2>Находим текущий блок на оригинальной странице…</h2><p>Статья появится только после того, как позиция будет связана с текстом Гемары.</p></div> : <>
         <div className="selectionBar"><div><span className="pulse" />Логический блок <strong>2а:{bounds[0] + 1}{bounds[1] !== bounds[0] ? `–${bounds[1] + 1}` : ""}</strong></div><div className="boundControls"><button onClick={expand}>− Расширить</button><button onClick={shrink}>Сузить +</button></div></div>
         <section className="analysisCard gemaraCard">
           <div className="cardTitle"><span>01</span><div><small>ГЕМАРА</small><h2>Зачем нужны все эти случаи?</h2></div></div>
@@ -71,6 +74,7 @@ export default function Home() {
         <div className="rashiHeading"><span>Раши к этому блоку</span><i>2</i></div>
         <section className="analysisCard rashiCard"><div className="rashiNumber">1</div><div className="hebrew" lang="he" dir="rtl">מייתי לה לקדושה — שתהא שובתת בשבת וכיון דמצוה עביד ליכא למיקנסיה</div><h3>Точный перевод</h3><p>«Приводит её к святости» — чтобы она отдыхала в Шаббат; а поскольку он совершает заповедь, нет оснований штрафовать его.</p><div className="explanation compact"><span>Смысл</span><p>Покупка животного у нееврея вводит его в режим еврейских обязанностей, включая покой в Шаббат.</p></div></section>
         <section className="analysisCard rashiCard"><div className="rashiNumber">2</div><div className="hebrew" lang="he" dir="rtl">אימא ליקנסיה — לפדות העובר מן העובד כוכבים וליתנו לכהן</div><h3>Точный перевод</h3><p>«Можно было бы сказать: оштрафуем его» — [обязав] выкупить зародыш у нееврея и отдать его коэну.</p><div className="explanation compact"><span>Смысл</span><p>Предполагаемый штраф возвращает первенца в сферу заповеди: продавец должен был бы выкупить его обратно и передать коэну.</p></div></section>
+        </>}
       </article>
     </section>
     {picked && <button className="saveSelection" style={{ left: picked.x, top: picked.y }} onMouseDown={(event) => event.preventDefault()} onClick={saveWord}>＋ В словарь</button>}
