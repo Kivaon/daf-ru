@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 type TextRect = { left: number; top: number; width: number; height: number };
+type WordRect = TextRect & { word: string; line: number };
 type PdfJsApi = {
   GlobalWorkerOptions: { workerSrc: string };
   getDocument: (source: { data: Uint8Array }) => { promise: Promise<unknown> };
@@ -25,13 +26,22 @@ function loadPdfJs() {
   });
 }
 
-export function PdfDafViewer({ zoom, onSelect, onBlockLocated }: { zoom: number; onSelect: () => void; onBlockLocated: () => void }) {
+const visualWords = [
+  ["גמ׳"],
+  ["כל"],
+  ["משום", "ה״א", "לוקח", "תנא", "דאי", "צריכי", "לי", "למה", "הני"],
+  ["דקא", "מוכר", "אבל", "לקדושה", "לה", "מייתי", "דקא"],
+  ["קמ״ל", "ליקנסיה", "אימא", "מקדושה", "לה", "מפקע"],
+];
+
+export function PdfDafViewer({ zoom, onSelect, onBlockLocated }: { zoom: number; onSelect: (word: string) => void; onBlockLocated: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
   const [size, setSize] = useState({ width: 644, height: 993 });
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [textRects, setTextRects] = useState<TextRect[]>([]);
+  const [wordRects, setWordRects] = useState<WordRect[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,14 +75,14 @@ export function PdfDafViewer({ zoom, onSelect, onBlockLocated }: { zoom: number;
         }
         const [a, b, c, d, e, f] = viewport.transform;
         const toViewport = (x: number, y: number) => ({ x: a * x + c * y + e, y: b * x + d * y + f });
-        const locatedRects = targetItems.flatMap((item) => {
+        const locatedWords = targetItems.flatMap((item, line) => {
           const lineStart = toViewport(item.transform[4], item.transform[5]);
           const lineEnd = toViewport(item.transform[4] + item.width, item.transform[5] + item.height);
           const lineLeft = Math.min(lineStart.x, lineEnd.x);
           const lineTop = Math.min(lineStart.y, lineEnd.y);
           const lineWidth = Math.abs(lineEnd.x - lineStart.x);
           const lineHeight = Math.abs(lineEnd.y - lineStart.y);
-          return Array.from(item.str.matchAll(/\S+/g)).map((match) => {
+          return Array.from(item.str.matchAll(/\S+/g)).map((match, wordIndex) => {
             const from = (match.index ?? 0) / item.str.length;
             const portion = match[0].length / item.str.length;
             return {
@@ -80,8 +90,18 @@ export function PdfDafViewer({ zoom, onSelect, onBlockLocated }: { zoom: number;
               top: lineTop + lineHeight * .23,
               width: Math.max(2, lineWidth * portion),
               height: lineHeight * .62,
+              word: visualWords[line]?.[wordIndex] ?? "слово",
+              line: line < 2 ? 0 : line - 1,
             };
           });
+        });
+        const locatedLines = Array.from(new Set(locatedWords.map((word) => word.line))).map((line) => {
+          const words = locatedWords.filter((word) => word.line === line);
+          const left = Math.min(...words.map((word) => word.left));
+          const right = Math.max(...words.map((word) => word.left + word.width));
+          const top = Math.min(...words.map((word) => word.top));
+          const bottom = Math.max(...words.map((word) => word.top + word.height));
+          return { left, top, width: right - left, height: bottom - top };
         });
         if (cancelled || !canvasRef.current) return;
 
@@ -92,7 +112,8 @@ export function PdfDafViewer({ zoom, onSelect, onBlockLocated }: { zoom: number;
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
         setSize({ width: viewport.width, height: viewport.height });
-        setTextRects(locatedRects);
+        setTextRects(locatedLines);
+        setWordRects(locatedWords);
 
         renderTaskRef.current?.cancel();
         const context = canvas.getContext("2d", { alpha: false });
@@ -131,9 +152,10 @@ export function PdfDafViewer({ zoom, onSelect, onBlockLocated }: { zoom: number;
         key={index}
         className="textHighlight"
         style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
-        onClick={onSelect}
-        aria-label={index === 0 ? "Выбрать блок: כל הני למה לי" : "Выбрать текущий блок Гемары"}
+        onClick={() => onSelect("כל")}
+        aria-label={index === 0 ? "Выбрать блок: גמ׳ כל הני למה לי" : "Выбрать текущий блок Гемары"}
       />)}
+      {wordRects.map((rect, index) => <button key={`word-${index}`} className="wordHit" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} onClick={() => onSelect(rect.word)} aria-label={`Слово ${rect.word}; блок Бехорот 2а:2–3`} />)}
     </div>}
   </div>;
 }
