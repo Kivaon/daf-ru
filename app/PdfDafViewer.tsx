@@ -36,6 +36,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [blocks, setBlocks] = useState<Record<string, LocatedBlock>>({});
+  const [hoveredBlock, setHoveredBlock] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,11 +85,22 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
           return { lines, words };
         };
         const part = (offset: number, take?: number[]) => ({ item: items[start + offset], take });
+        const mishnahParts = items
+          .filter((item) => item.transform[4] >= 218 && item.transform[4] <= 395 && item.transform[5] > 965 && item.transform[5] < 1080)
+          .map((item) => ({ item }));
         const locatedBlocks = {
-          "2a:2-3": locate([-1, 0, 1, 2, 3].map((offset) => part(offset))),
+          "2a:1": locate(mishnahParts),
+          "2a:2": locate([part(-1), part(0), part(1, [6, 7, 8])]),
+          "2a:3": locate([part(1, [0, 1, 2, 3, 4, 5]), part(2), part(3)]),
           "2a:4": locate([6, 8, 10, 12, 13].map((offset) => part(offset))),
-          "2a:5-6": locate([part(14), part(15), part(16), part(17), part(18)]),
-          "2a:7-12": locate([part(20), part(21), part(23), part(24), part(25), part(26), part(27), part(28), part(29), part(30), part(31), part(32), part(33), part(34), part(35), part(37), part(38)]),
+          "2a:5": locate([part(14), part(15, [5, 6, 7])]),
+          "2a:6": locate([part(15, [0, 1, 2, 3, 4]), part(16), part(17), part(18)]),
+          "2a:7": locate([part(20), part(21), part(23)]),
+          "2a:8": locate([part(24), part(25), part(26), part(27, [1, 2, 3, 4, 5, 6, 7])]),
+          "2a:9": locate([part(27, [0]), part(28)]),
+          "2a:10": locate([part(29), part(30)]),
+          "2a:11": locate([part(31), part(32, [5, 6])]),
+          "2a:12": locate([part(32, [0, 1, 2, 3, 4]), part(33), part(34), part(35), part(37), part(38)]),
         };
         if (cancelled || !canvasRef.current) return;
         const canvas = canvasRef.current;
@@ -112,14 +124,14 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
     return () => { cancelled = true; renderTaskRef.current?.cancel(); };
   }, [zoom, onBlockLocated]);
 
-  const active = blocks[selectedBlock];
+  const active = blocks[hoveredBlock ?? selectedBlock];
   return <div className="pdfStage" style={{ width: size.width, height: size.height }}>
     <canvas ref={canvasRef} aria-label="Оригинальный PDF, Бехорот 2а" />
     {status === "loading" && <div className="pdfStatus">Загружаем оригинальный PDF…</div>}
     {status === "error" && <div className="pdfStatus error">Не удалось открыть PDF.<small>{errorMessage}</small><a href="/bekhorot-2a.pdf">Открыть оригинал</a></div>}
     {status === "ready" && <div className="pdfInteraction" aria-label="Интерактивный слой текста Гемары">
       {active?.lines.map((rect, index) => <span key={`highlight-${index}`} className="textHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
-      {Object.entries(blocks).flatMap(([blockId, block]) => block.words.map((rect, index) => <button key={`${blockId}-${index}`} className="wordHit" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} onClick={() => onSelect(blockId, rect.word)} aria-label={`Слово ${rect.word}; блок Бехорот ${blockId}`} />))}
+      {Object.entries(blocks).flatMap(([blockId, block]) => block.words.map((rect, index) => <button key={`${blockId}-${index}`} className="wordHit" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} onPointerEnter={() => setHoveredBlock(blockId)} onPointerLeave={() => setHoveredBlock(null)} onFocus={() => setHoveredBlock(blockId)} onBlur={() => setHoveredBlock(null)} onClick={() => blockId !== selectedBlock && onSelect(blockId, rect.word)} aria-label={`Слово ${rect.word}; реплика Бехорот ${blockId}`} />))}
     </div>}
   </div>;
 }

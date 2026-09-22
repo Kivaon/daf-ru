@@ -12,14 +12,14 @@ const segments = [
 ];
 
 export default function Home() {
-  const [bounds, setBounds] = useState<[number, number]>([1, 2]);
+  const [bounds, setBounds] = useState<[number, number]>([2, 2]);
   const [dictionaryOpen, setDictionaryOpen] = useState(false);
   const [words, setWords] = useState<string[]>([]);
   const [picked, setPicked] = useState<{ text: string; x: number; y: number } | null>(null);
   const [zoom, setZoom] = useState(1.5);
   const [blockLocated, setBlockLocated] = useState(false);
   const [selectedWord, setSelectedWord] = useState<string | null>(null);
-  const [selectedBlock, setSelectedBlock] = useState("2a:2-3");
+  const [selectedBlock, setSelectedBlock] = useState("2a:3");
   const locateBlock = useCallback(() => setBlockLocated(true), []);
   const selectPdfWord = useCallback((blockId: string, word: string) => {
     const [from, to = from] = blockId.split(":")[1].split("-").map(Number);
@@ -69,12 +69,12 @@ export default function Home() {
       <article className="studyPane" onMouseUp={captureSelection}>
         {!blockLocated ? <div className="studyWaiting"><span>Лист определяет разбор</span><h2>Находим текущий блок на оригинальной странице…</h2><p>Статья появится только после того, как позиция будет связана с текстом Гемары.</p></div> : <>
         <div className="selectionBar"><div><span className="pulse" />Логический блок <strong>2а:{bounds[0] + 1}{bounds[1] !== bounds[0] ? `–${bounds[1] + 1}` : ""}</strong>{selectedWord && <span className="pickedWord">Слово: <b lang="he" dir="rtl">{selectedWord}</b></span>}</div><div className="boundControls"><button onClick={expand}>− Расширить</button><button onClick={shrink}>Сузить +</button></div></div>
-        {selectedBlock === "2a:2-3" ? <><section className="analysisCard gemaraCard">
-          <div className="cardTitle"><span>01</span><div><small>ГЕМАРА</small><h2>Зачем нужны все эти случаи?</h2></div></div>
+        {selectedBlock === "2a:3" ? <><section className="analysisCard gemaraCard">
+          <div className="cardTitle"><span>01</span><div><small>ГЕМАРА</small><h2>Почему необходимы оба случая?</h2></div></div>
           <div className="sourceBadge"><b>DAF-RU</b><span>редакционная версия</span><time>22.09.2026</time></div>
-          <div className="hebrew" lang="he" dir="rtl">כׇּל הָנֵי לְמָה לִי? צְרִיכִי, דְּאִי תְּנָא לוֹקֵחַ — הֲוָה אָמֵינָא מִשּׁוּם דְּקָא מַיְיתֵי לַהּ לִקְדוּשָּׁה, אֲבָל מוֹכֵר דְּקָא מַפְקַע לַהּ מִקְּדוּשָּׁה — אֵימָא לִיקְנְסֵיהּ, קָא מַשְׁמַע לַן.</div>
+          <div className="hebrew" lang="he" dir="rtl">צְרִיכִי, דְּאִי תְּנָא לוֹקֵחַ — הֲוָה אָמֵינָא מִשּׁוּם דְּקָא מַיְיתֵי לַהּ לִקְדוּשָּׁה, אֲבָל מוֹכֵר דְּקָא מַפְקַע לַהּ מִקְּדוּשָּׁה — אֵימָא לִיקְנְסֵיהּ, קָא מַשְׁמַע לַן.</div>
           <div className="rule" /><h3>Точный перевод</h3>
-          <p>Все эти случаи — зачем они мне? Они необходимы. Ведь если бы учили только о покупающем, я бы сказал: это потому, что он приводит её к святости. Но продающий, который выводит её из святости, — можно было бы сказать: оштрафуем его. Поэтому сообщается нам, что это не так.</p>
+          <p>Они необходимы. Ведь если бы учили только о покупающем, я бы сказал: это потому, что он приводит её к святости. Но продающий, который выводит её из святости, — можно было бы сказать: оштрафуем его. Поэтому сообщается нам, что это не так.</p>
           <div className="explanation"><span>Коротко</span><p>Мишна перечисляет и покупателя, и продавца, потому что их действия противоположны. Можно было предположить, что продавца накажут обязанностью отдать первенца коэну. Мишна исключает такой штраф.</p></div>
         </section>
         <div className="rashiHeading"><span>Раши к этому блоку</span><i>2</i></div>
