@@ -40,6 +40,52 @@ function editionWords(text: string) {
   });
 }
 
+function lineRects(words: WordRect[]) {
+  const rectangles: TextRect[] = [];
+  Array.from(new Set(words.map((word) => word.line))).forEach((line) => {
+    const row = words.filter((word) => word.line === line).sort((a, b) => a.left - b.left);
+    let group: WordRect[] = [];
+    const flush = () => {
+      if (!group.length) return;
+      const left = Math.min(...group.map((word) => word.left));
+      const right = Math.max(...group.map((word) => word.left + word.width));
+      const top = Math.min(...group.map((word) => word.top));
+      const bottom = Math.max(...group.map((word) => word.top + word.height));
+      const fullHeight = bottom - top;
+      rectangles.push({ left, top: top + fullHeight * .48, width: right - left, height: fullHeight * .46 });
+      group = [];
+    };
+    row.forEach((word) => {
+      const previous = group.at(-1);
+      if (previous && word.left - (previous.left + previous.width) > Math.max(word.height * 1.8, 18)) flush();
+      group.push(word);
+    });
+    flush();
+  });
+  return rectangles;
+}
+
+function matchBoundaryWords(sourceText: string, candidates: WordRect[], offset: number) {
+  const source = editionWords(sourceText);
+  const target = candidates.map((word) => normalizeHebrew(word.word));
+  const width = target.length + 1;
+  const lengths = new Uint16Array((source.length + 1) * width);
+  for (let i = 1; i <= source.length; i++) for (let j = 1; j <= target.length; j++) {
+    const index = i * width + j;
+    lengths[index] = source[i - 1] === target[j - 1]
+      ? lengths[(i - 1) * width + j - 1] + 1
+      : Math.max(lengths[(i - 1) * width + j], lengths[index - 1]);
+  }
+  const matched: number[] = [];
+  let exactCharacters = 0, i = source.length, j = target.length;
+  while (i > 0 && j > 0) {
+    if (source[i - 1] === target[j - 1]) { matched.push(offset + j - 1); exactCharacters += source[i - 1].length; i--; j--; }
+    else if (lengths[(i - 1) * width + j] >= lengths[i * width + j - 1]) i--;
+    else j--;
+  }
+  return { matched: matched.reverse(), exactCharacters };
+}
+
 function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
   const sourceChars: Array<{ char: string; segment: number }> = [];
   segments.forEach((segment, segmentIndex) => {
@@ -79,8 +125,27 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
     } else if (direction === 1 || j === 0) i--;
     else j--;
   }
-  const validationExact = exact.filter((_, index) => totals[index] > 0);
-  const validationTotals = totals.filter((value) => value > 0);
+  const interiorMatched = matchedWords.slice(1, -1).flatMap((set) => [...set]);
+  if (segments.length > 1 && interiorMatched.length) {
+    const firstInterior = Math.min(...interiorMatched), lastInterior = Math.max(...interiorMatched);
+    if (!segments[0].id.startsWith("2a:")) {
+      const boundary = matchBoundaryWords(segments[0].text, pdfWords.slice(0, firstInterior), 0);
+      if (boundary.exactCharacters >= 10) {
+        matchedWords[0] = new Set(boundary.matched); exact[0] = boundary.exactCharacters;
+        totals[0] = editionWords(segments[0].text).join("").length;
+      }
+    }
+    const lastIndex = segments.length - 1;
+    const boundary = matchBoundaryWords(segments[lastIndex].text, pdfWords.slice(lastInterior + 1), lastInterior + 1);
+    if (boundary.exactCharacters >= 10) {
+      matchedWords[lastIndex] = new Set(boundary.matched); exact[lastIndex] = boundary.exactCharacters;
+      totals[lastIndex] = editionWords(segments[lastIndex].text).join("").length;
+    }
+  }
+  const validationIndexes = totals.map((_, index) => index).filter((index) =>
+    totals[index] > 0 && index !== segments.length - 1 && (index !== 0 || segments[0].id.startsWith("2a:")));
+  const validationExact = validationIndexes.map((index) => exact[index]);
+  const validationTotals = validationIndexes.map((index) => totals[index]);
   const exactCharacters = validationExact.reduce((sum, value) => sum + value, 0);
   const totalCharacters = validationTotals.reduce((sum, value) => sum + value, 0);
   const overallRatio = exactCharacters / totalCharacters;
@@ -93,21 +158,15 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
     const matched = [...matchedWords[segmentIndex]].sort((a, b) => a - b);
     const boundarySegment = segmentIndex === 0 || segmentIndex === segments.length - 1;
     if (boundarySegment && totals[segmentIndex] === 0) return;
-    const requiredRatio = boundarySegment ? .18 : .70;
+    const requiredRatio = .70;
     const segmentRatio = exact[segmentIndex] / totals[segmentIndex];
-    if (boundarySegment && (!matched.length || segmentRatio < requiredRatio)) return;
+    if (boundarySegment && (!matched.length || exact[segmentIndex] < 10)) return;
     if (!matched.length || segmentRatio < requiredRatio) throw new Error(`Реплика ${segment.id}: совпало ${Math.round(segmentRatio * 100)}% текста, требуется 70%`);
     const first = matched[0], last = matched.at(-1)!;
     if (first <= previousEnd) throw new Error(`Пересечение реплик Sefaria у ${segment.id}`);
     previousEnd = last;
     const words = pdfWords.slice(first, last + 1);
-    const lines = Array.from(new Set(words.map((word) => word.line))).map((line) => {
-      const row = words.filter((word) => word.line === line);
-      const left = Math.min(...row.map((word) => word.left)), right = Math.max(...row.map((word) => word.left + word.width));
-      const top = Math.min(...row.map((word) => word.top)), bottom = Math.max(...row.map((word) => word.top + word.height));
-      const fullHeight = bottom - top;
-      return { left, top: top + fullHeight * .48, width: right - left, height: fullHeight * .46 };
-    });
+    const lines = lineRects(words);
     blocks[segment.id] = { words, lines };
   });
   return blocks;
@@ -153,13 +212,7 @@ function alignDiburimToPdf(pdfWords: WordRect[], comments: CommentaryLink[]) {
     const matched = [...matchedWords[index]].sort((a, b) => a - b);
     if (!matched.length || exact[index] / totals[index] < .58) return;
     const words = pdfWords.slice(matched[0], matched.at(-1)! + 1);
-    const lines = Array.from(new Set(words.map((word) => word.line))).map((line) => {
-      const row = words.filter((word) => word.line === line);
-      const left = Math.min(...row.map((word) => word.left)), right = Math.max(...row.map((word) => word.left + word.width));
-      const top = Math.min(...row.map((word) => word.top)), bottom = Math.max(...row.map((word) => word.top + word.height));
-      const fullHeight = bottom - top;
-      return { left, top: top + fullHeight * .48, width: right - left, height: fullHeight * .46 };
-    });
+    const lines = lineRects(words);
     blocks[comment.ref] = { words, lines };
   });
   return blocks;
@@ -179,13 +232,7 @@ function locateDiburInGemara(words: WordRect[], dibur: string) {
   });
   if (!matchedIndexes.length || matchedIndexes.length / source.length < .5) return null;
   const locatedWords = words.slice(matchedIndexes[0], matchedIndexes.at(-1)! + 1);
-  const lines = Array.from(new Set(locatedWords.map((word) => word.line))).map((line) => {
-    const row = locatedWords.filter((word) => word.line === line);
-    const left = Math.min(...row.map((word) => word.left)), right = Math.max(...row.map((word) => word.left + word.width));
-    const top = Math.min(...row.map((word) => word.top)), bottom = Math.max(...row.map((word) => word.top + word.height));
-    const fullHeight = bottom - top;
-    return { left, top: top + fullHeight * .48, width: right - left, height: fullHeight * .46 };
-  });
+  const lines = lineRects(locatedWords);
   return { words: locatedWords, lines };
 }
 
