@@ -87,14 +87,8 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
         const locatedBlocks = {
           "2a:2-3": locate([-1, 0, 1, 2, 3].map((offset) => part(offset))),
           "2a:4": locate([6, 8, 10, 12, 13].map((offset) => part(offset))),
-          "2a:5": locate([part(14), part(15, [5, 6, 7])]),
-          "2a:6": locate([part(15, [0, 1, 2, 3, 4]), part(16), part(17), part(18)]),
-          "2a:7": locate([part(20), part(21), part(23)]),
-          "2a:8": locate([part(24), part(25), part(26), part(27, [1, 2, 3, 4, 5, 6, 7])]),
-          "2a:9": locate([part(27, [0]), part(28)]),
-          "2a:10": locate([part(29), part(30)]),
-          "2a:11": locate([part(31), part(32, [5, 6])]),
-          "2a:12": locate([part(32, [0, 1, 2, 3, 4]), part(33), part(34), part(35), part(37), part(38)]),
+          "2a:5-6": locate([part(14), part(15), part(16), part(17), part(18)]),
+          "2a:7-12": locate([part(20), part(21), part(23), part(24), part(25), part(26), part(27), part(28), part(29), part(30), part(31), part(32), part(33), part(34), part(35), part(37), part(38)]),
         };
         if (cancelled || !canvasRef.current) return;
         const canvas = canvasRef.current;
