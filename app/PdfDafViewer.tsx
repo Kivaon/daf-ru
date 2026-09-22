@@ -86,7 +86,9 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
         };
         const part = (offset: number, take?: number[]) => ({ item: items[start + offset], take });
         const mishnahParts = items
-          .filter((item) => item.transform[4] >= 218 && item.transform[4] <= 395 && item.transform[5] > 965 && item.transform[5] < 1080)
+          .filter((item) => item.transform[4] >= 218 && item.transform[4] <= 395 && item.transform[5] < 1080 && (
+            item.transform[5] > 965 || (item.transform[5] > 945 && item.transform[4] >= 250)
+          ))
           .map((item) => ({ item }));
         const locatedBlocks = {
           "2a:1": locate(mishnahParts),
@@ -124,13 +126,15 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
     return () => { cancelled = true; renderTaskRef.current?.cancel(); };
   }, [zoom, onBlockLocated]);
 
-  const active = blocks[hoveredBlock ?? selectedBlock];
+  const selected = blocks[selectedBlock];
+  const preview = hoveredBlock && hoveredBlock !== selectedBlock ? blocks[hoveredBlock] : null;
   return <div className="pdfStage" style={{ width: size.width, height: size.height }}>
     <canvas ref={canvasRef} aria-label="Оригинальный PDF, Бехорот 2а" />
     {status === "loading" && <div className="pdfStatus">Загружаем оригинальный PDF…</div>}
     {status === "error" && <div className="pdfStatus error">Не удалось открыть PDF.<small>{errorMessage}</small><a href="/bekhorot-2a.pdf">Открыть оригинал</a></div>}
     {status === "ready" && <div className="pdfInteraction" aria-label="Интерактивный слой текста Гемары">
-      {active?.lines.map((rect, index) => <span key={`highlight-${index}`} className="textHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
+      {selected?.lines.map((rect, index) => <span key={`selected-${index}`} className="textHighlight selectedHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
+      {preview?.lines.map((rect, index) => <span key={`preview-${index}`} className="textHighlight hoverHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
       {Object.entries(blocks).flatMap(([blockId, block]) => block.words.map((rect, index) => <button key={`${blockId}-${index}`} className="wordHit" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} onPointerEnter={() => setHoveredBlock(blockId)} onPointerLeave={() => setHoveredBlock(null)} onFocus={() => setHoveredBlock(blockId)} onBlur={() => setHoveredBlock(null)} onClick={() => blockId !== selectedBlock && onSelect(blockId, rect.word)} aria-label={`Слово ${rect.word}; реплика Бехорот ${blockId}`} />))}
     </div>}
   </div>;
