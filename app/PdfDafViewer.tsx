@@ -21,9 +21,14 @@ export function PdfDafViewer({ zoom, onSelect }: { zoom: number; onSelect: () =>
     async function renderPdf() {
       try {
         setStatus("loading");
-        const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-        const pdf = await pdfjs.getDocument({ url: "/bekhorot-2a.pdf" }).promise;
+        const [pdfjs, response] = await Promise.all([
+          import("pdfjs-dist"),
+          fetch("/bekhorot-2a.pdf?v=2", { cache: "no-store", credentials: "same-origin" }),
+        ]);
+        if (!response.ok) throw new Error(`PDF request failed: ${response.status}`);
+        pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs?v=2";
+        const pdfData = new Uint8Array(await response.arrayBuffer());
+        const pdf = await pdfjs.getDocument({ data: pdfData }).promise;
         const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: zoom });
         if (cancelled || !canvasRef.current) return;
