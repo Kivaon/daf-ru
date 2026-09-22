@@ -2,18 +2,18 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://havruta-bekhorot-2a.mffkk78khq.chatgpt.site"),
-  title: "Хаврута — Бехорот 2а",
-  description: "Интерактивный разбор Талмуда: оригинал, точный перевод и Раши.",
+  metadataBase: new URL("https://daf-ru.mffkk78khq.chatgpt.site"),
+  title: "Daf-Ru — Бехорот 2а",
+  description: "Учимся читать оригинальный лист: Гемара, русский перевод и Раши.",
   openGraph: {
-    title: "Хаврута — Бехорот 2а",
-    description: "Интерактивный разбор Талмуда: оригинал, точный перевод и Раши.",
+    title: "Daf-Ru — Бехорот 2а",
+    description: "Учимся читать оригинальный лист: Гемара, русский перевод и Раши.",
     images: ["/og.png"],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Хаврута — Бехорот 2а",
-    description: "Интерактивный разбор Талмуда: оригинал, точный перевод и Раши.",
+    title: "Daf-Ru — Бехорот 2а",
+    description: "Учимся читать оригинальный лист: Гемара, русский перевод и Раши.",
     images: ["/og.png"],
   },
 };

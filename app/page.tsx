@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PdfDafViewer } from "./PdfDafViewer";
 
 const segments = [
   { ref: "Бехорот 2а:1", kind: "Мишна", text: "הַלּוֹקֵחַ עוּבַּר חֲמוֹרוֹ שֶׁל נָכְרִי, וְהַמּוֹכֵר לוֹ, אַף עַל פִּי שֶׁאֵינוֹ רַשַּׁאי, הַמִּשְׁתַּתֵּף לוֹ, וְהַמְקַבֵּל הֵימֶנּוּ, וְהַנּוֹתֵן לוֹ בְּקַבָּלָה — פָּטוּר מִן הַבְּכוֹרָה." },
@@ -44,28 +45,24 @@ export default function Home() {
 
   return <main>
     <header className="topbar">
-      <div className="brand"><span className="brandMark">א</span><span>Хаврута</span></div>
+      <div className="brand"><span className="brandMark">דף</span><span>Daf-Ru</span></div>
       <div className="progress"><span>Бехорот · глава 1</span><strong>2а</strong><span className="status"><i /> Позиция сохранена</span></div>
       <button className="iconButton" onClick={() => setDictionaryOpen(true)} aria-label="Открыть словарь">⌘ <span>Словарь</span>{words.length > 0 && <b>{words.length}</b>}</button>
     </header>
 
     <section className="workspace">
       <aside className="sourcePane dafPane">
-        <div className="paneHeading"><div><span className="eyebrow">ОРИГИНАЛЬНЫЙ ЛИСТ</span><h1>Бехорот <b>2а</b></h1></div><span className="verified">Скан Виленского листа</span></div>
+        <div className="paneHeading"><div><span className="eyebrow">ОРИГИНАЛЬНЫЙ ЛИСТ</span><h1>Бехорот <b>2а</b></h1></div><span className="verified">Оригинальный PDF</span></div>
         <div className="dafToolbar"><div><span className="currentKey"><i /> Текущее место</span><span className="hint">Нажмите на отмеченный фрагмент</span></div><div className="zoomControls"><button onClick={() => setZoom(value => Math.max(.6, value - .15))} aria-label="Уменьшить">−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(value => Math.min(1.8, value + .15))} aria-label="Увеличить">+</button></div></div>
-        <div className="dafViewport">
-          <div className="dafSheet" style={{ width: `${zoom * 100}%` }}>
-            <img src="/bekhorot-2a-vilna.png" alt="Оригинальный Виленский лист Талмуда, Бехорот 2а" />
-            <button className={`dafRegion ${bounds[0] < 1 || bounds[1] > 2 ? "wide" : ""}`} onClick={() => setBounds([1, 2])} aria-label="Открыть текущий логический блок"><span className="locationDot" /><span className="locationLabel">Мы здесь</span></button>
-          </div>
-        </div>
-        <div className="pageGuide"><span><b>Центр</b> Мишна и Гемара</span><span><b>Внутреннее поле</b> Раши</span><span><b>Внешнее поле</b> Тосафот</span><a href="https://www.shas.org/dafviewer/" target="_blank" rel="noreferrer">Скан: HebrewBooks / Shas.org ↗</a></div>
+        <div className="dafViewport"><PdfDafViewer zoom={zoom} onSelect={() => setBounds([1, 2])} /></div>
+        <div className="pageGuide"><span><b>Центр</b> Мишна и Гемара</span><span><b>Интерактивно</b> Пока только Гемара</span><span><b>Источник</b> HebrewBooks</span><a href="/bekhorot-2a.pdf" target="_blank" rel="noreferrer">Открыть оригинальный PDF ↗</a></div>
       </aside>
 
       <article className="studyPane" onMouseUp={captureSelection}>
         <div className="selectionBar"><div><span className="pulse" />Логический блок <strong>2а:{bounds[0] + 1}{bounds[1] !== bounds[0] ? `–${bounds[1] + 1}` : ""}</strong></div><div className="boundControls"><button onClick={expand}>− Расширить</button><button onClick={shrink}>Сузить +</button></div></div>
         <section className="analysisCard gemaraCard">
           <div className="cardTitle"><span>01</span><div><small>ГЕМАРА</small><h2>Зачем нужны все эти случаи?</h2></div></div>
+          <div className="sourceBadge"><b>DAF-RU</b><span>редакционная версия</span><time>22.09.2026</time></div>
           <div className="hebrew" lang="he" dir="rtl">כׇּל הָנֵי לְמָה לִי? צְרִיכִי, דְּאִי תְּנָא לוֹקֵחַ — הֲוָה אָמֵינָא מִשּׁוּם דְּקָא מַיְיתֵי לַהּ לִקְדוּשָּׁה, אֲבָל מוֹכֵר דְּקָא מַפְקַע לַהּ מִקְּדוּשָּׁה — אֵימָא לִיקְנְסֵיהּ, קָא מַשְׁמַע לַן.</div>
           <div className="rule" /><h3>Точный перевод</h3>
           <p>Все эти случаи — зачем они мне? Они необходимы. Ведь если бы учили только о покупающем, я бы сказал: это потому, что он приводит её к святости. Но продающий, который выводит её из святости, — можно было бы сказать: оштрафуем его. Поэтому сообщается нам, что это не так.</p>
