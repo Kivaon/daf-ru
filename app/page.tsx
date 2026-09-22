@@ -19,8 +19,11 @@ export default function Home() {
   const [zoom, setZoom] = useState(1.5);
   const [blockLocated, setBlockLocated] = useState(false);
   const [selectedWord, setSelectedWord] = useState<string | null>(null);
+  const [selectedBlock, setSelectedBlock] = useState("2a:2-3");
   const locateBlock = useCallback(() => setBlockLocated(true), []);
-  const selectPdfWord = useCallback((word: string) => { setSelectedWord(word); setBounds([1, 2]); }, []);
+  const selectPdfWord = useCallback((blockId: string, word: string) => {
+    setSelectedBlock(blockId); setSelectedWord(word); setBounds(blockId === "2a:4" ? [3, 3] : [1, 2]);
+  }, []);
 
   useEffect(() => {
     const savedBounds = localStorage.getItem("havruta-position");
@@ -58,14 +61,14 @@ export default function Home() {
       <aside className="sourcePane dafPane">
         <div className="paneHeading"><div><span className="eyebrow">ОРИГИНАЛЬНЫЙ ЛИСТ</span><h1>Бехорот <b>2а</b></h1></div><span className="verified">Оригинальный PDF</span></div>
         <div className="dafToolbar"><div><span className="currentKey"><i /> Выбранный блок</span><span className="hint">Нажмите на слово Гемары</span></div><div className="zoomControls"><button onClick={() => setZoom(value => Math.max(.6, value - .15))} aria-label="Уменьшить">−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(value => Math.min(1.8, value + .15))} aria-label="Увеличить">+</button></div></div>
-        <div className="dafViewport"><PdfDafViewer zoom={zoom} onSelect={selectPdfWord} onBlockLocated={locateBlock} /></div>
+        <div className="dafViewport"><PdfDafViewer zoom={zoom} selectedBlock={selectedBlock} onSelect={selectPdfWord} onBlockLocated={locateBlock} /></div>
         <div className="pageGuide"><span><b>Центр</b> Мишна и Гемара</span><span><b>Интерактивно</b> Пока только Гемара</span><span><b>Источник</b> HebrewBooks</span><a href="/bekhorot-2a.pdf" target="_blank" rel="noreferrer">Открыть оригинальный PDF ↗</a></div>
       </aside>
 
       <article className="studyPane" onMouseUp={captureSelection}>
         {!blockLocated ? <div className="studyWaiting"><span>Лист определяет разбор</span><h2>Находим текущий блок на оригинальной странице…</h2><p>Статья появится только после того, как позиция будет связана с текстом Гемары.</p></div> : <>
         <div className="selectionBar"><div><span className="pulse" />Логический блок <strong>2а:{bounds[0] + 1}{bounds[1] !== bounds[0] ? `–${bounds[1] + 1}` : ""}</strong>{selectedWord && <span className="pickedWord">Слово: <b lang="he" dir="rtl">{selectedWord}</b></span>}</div><div className="boundControls"><button onClick={expand}>− Расширить</button><button onClick={shrink}>Сузить +</button></div></div>
-        <section className="analysisCard gemaraCard">
+        {selectedBlock === "2a:2-3" ? <><section className="analysisCard gemaraCard">
           <div className="cardTitle"><span>01</span><div><small>ГЕМАРА</small><h2>Зачем нужны все эти случаи?</h2></div></div>
           <div className="sourceBadge"><b>DAF-RU</b><span>редакционная версия</span><time>22.09.2026</time></div>
           <div className="hebrew" lang="he" dir="rtl">כׇּל הָנֵי לְמָה לִי? צְרִיכִי, דְּאִי תְּנָא לוֹקֵחַ — הֲוָה אָמֵינָא מִשּׁוּם דְּקָא מַיְיתֵי לַהּ לִקְדוּשָּׁה, אֲבָל מוֹכֵר דְּקָא מַפְקַע לַהּ מִקְּדוּשָּׁה — אֵימָא לִיקְנְסֵיהּ, קָא מַשְׁמַע לַן.</div>
@@ -75,7 +78,7 @@ export default function Home() {
         </section>
         <div className="rashiHeading"><span>Раши к этому блоку</span><i>2</i></div>
         <section className="analysisCard rashiCard"><div className="rashiNumber">1</div><div className="hebrew" lang="he" dir="rtl">מייתי לה לקדושה — שתהא שובתת בשבת וכיון דמצוה עביד ליכא למיקנסיה</div><h3>Точный перевод</h3><p>«Приводит её к святости» — чтобы она отдыхала в Шаббат; а поскольку он совершает заповедь, нет оснований штрафовать его.</p><div className="explanation compact"><span>Смысл</span><p>Покупка животного у нееврея вводит его в режим еврейских обязанностей, включая покой в Шаббат.</p></div></section>
-        <section className="analysisCard rashiCard"><div className="rashiNumber">2</div><div className="hebrew" lang="he" dir="rtl">אימא ליקנסיה — לפדות העובר מן העובד כוכבים וליתנו לכהן</div><h3>Точный перевод</h3><p>«Можно было бы сказать: оштрафуем его» — [обязав] выкупить зародыш у нееврея и отдать его коэну.</p><div className="explanation compact"><span>Смысл</span><p>Предполагаемый штраф возвращает первенца в сферу заповеди: продавец должен был бы выкупить его обратно и передать коэну.</p></div></section>
+        <section className="analysisCard rashiCard"><div className="rashiNumber">2</div><div className="hebrew" lang="he" dir="rtl">אימא ליקנסיה — לפדות העובר מן העובד כוכבים וליתנו לכהן</div><h3>Точный перевод</h3><p>«Можно было бы сказать: оштрафуем его» — [обязав] выкупить зародыш у нееврея и отдать его коэну.</p><div className="explanation compact"><span>Смысл</span><p>Предполагаемый штраф возвращает первенца в сферу заповеди: продавец должен был бы выкупить его обратно и передать коэну.</p></div></section></> : <section className="analysisCard gemaraCard"><div className="cardTitle"><span>02</span><div><small>ГЕМАРА · БЛОК 2а:4</small><h2>Блок найден по выбранному слову</h2></div></div><div className="hebrew" lang="he" dir="rtl">וְהַמִּשְׁתַּתֵּף לוֹ, לְמָה לִי? לְאַפּוֹקֵי מִדְּרַבִּי יְהוּדָה, דְּאָמַר: שׁוּתָּפוּת גּוֹיִ חַיֶּיבֶת בִּבְכוֹרָה, קָמַשְׁמַע לַן דִּפְטוּרָה מִן הַבְּכוֹרָה.</div><div className="explanation"><span>Тест выбора</span><p>Слово найдено на оригинальном листе, определён блок 2а:4 и выделение переключено на его границы. Разбор этого блока пока не сохранён.</p></div></section>}
         </>}
       </article>
     </section>
