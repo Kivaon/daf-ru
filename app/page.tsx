@@ -15,6 +15,7 @@ export default function Home() {
   const [dictionaryOpen, setDictionaryOpen] = useState(false);
   const [words, setWords] = useState<string[]>([]);
   const [picked, setPicked] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [zoom, setZoom] = useState(0.9);
 
   useEffect(() => {
     const savedBounds = localStorage.getItem("havruta-position");
@@ -23,7 +24,6 @@ export default function Home() {
     if (savedWords) setWords(JSON.parse(savedWords));
   }, []);
   useEffect(() => { localStorage.setItem("havruta-position", JSON.stringify(bounds)); }, [bounds]);
-  const select = (index: number) => setBounds(index === 0 ? [0, 0] : index <= 2 ? [1, 2] : [index, index]);
   const shrink = () => setBounds(([start, end]) => end > start ? [start + 1, end] : [start, end]);
   const expand = () => setBounds(([start, end]) => [Math.max(0, start - 1), Math.min(segments.length - 1, end + 1)]);
   const captureSelection = () => {
@@ -50,14 +50,16 @@ export default function Home() {
     </header>
 
     <section className="workspace">
-      <aside className="sourcePane" onMouseUp={captureSelection}>
-        <div className="paneHeading"><div><span className="eyebrow">ТАЛМУД БАВЛИ</span><h1>Бехорот <b>2а</b></h1></div><span className="verified">✓ Sefaria</span></div>
-        <p className="hint">Нажмите на фразу — мы соберём её логический блок</p>
-        <div className="segments" lang="he" dir="rtl">
-          {segments.map((segment, index) => <button key={segment.ref} onClick={() => select(index)} className={`segment ${index >= bounds[0] && index <= bounds[1] ? "selected" : ""}`}>
-            <span className="segmentMeta">{segment.kind} · {segment.ref.replace("Бехорот ", "")}</span><span>{segment.text}</span>
-          </button>)}
+      <aside className="sourcePane dafPane">
+        <div className="paneHeading"><div><span className="eyebrow">ОРИГИНАЛЬНЫЙ ЛИСТ</span><h1>Бехорот <b>2а</b></h1></div><span className="verified">Скан Виленского листа</span></div>
+        <div className="dafToolbar"><div><span className="currentKey"><i /> Текущее место</span><span className="hint">Нажмите на отмеченный фрагмент</span></div><div className="zoomControls"><button onClick={() => setZoom(value => Math.max(.6, value - .15))} aria-label="Уменьшить">−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(value => Math.min(1.8, value + .15))} aria-label="Увеличить">+</button></div></div>
+        <div className="dafViewport">
+          <div className="dafSheet" style={{ width: `${zoom * 100}%` }}>
+            <img src="/bekhorot-2a-vilna.png" alt="Оригинальный Виленский лист Талмуда, Бехорот 2а" />
+            <button className={`dafRegion ${bounds[0] < 1 || bounds[1] > 2 ? "wide" : ""}`} onClick={() => setBounds([1, 2])} aria-label="Открыть текущий логический блок"><span className="locationDot" /><span className="locationLabel">Мы здесь</span></button>
+          </div>
         </div>
+        <div className="pageGuide"><span><b>Центр</b> Мишна и Гемара</span><span><b>Внутреннее поле</b> Раши</span><span><b>Внешнее поле</b> Тосафот</span><a href="https://www.shas.org/dafviewer/" target="_blank" rel="noreferrer">Скан: HebrewBooks / Shas.org ↗</a></div>
       </aside>
 
       <article className="studyPane" onMouseUp={captureSelection}>
