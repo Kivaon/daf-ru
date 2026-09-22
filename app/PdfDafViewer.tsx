@@ -153,23 +153,28 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
     throw new Error(`Сверка текста Гемары: совпало ${Math.round(overallRatio * 100)}% (${exactCharacters} из ${totalCharacters} букв; требуется 84%). Пограничные реплики страницы не учитывались`);
   }
   const blocks: Record<string, LocatedBlock> = {};
+  const warnings: string[] = [];
   let previousEnd = -1;
   segments.forEach((segment, segmentIndex) => {
-    const matched = [...matchedWords[segmentIndex]].sort((a, b) => a - b);
+    let matched = [...matchedWords[segmentIndex]].sort((a, b) => a - b);
     const boundarySegment = segmentIndex === 0 || segmentIndex === segments.length - 1;
     if (boundarySegment && totals[segmentIndex] === 0) return;
     const requiredRatio = .70;
     const segmentRatio = exact[segmentIndex] / totals[segmentIndex];
     if (boundarySegment && (!matched.length || exact[segmentIndex] < 10)) return;
-    if (!matched.length || segmentRatio < requiredRatio) throw new Error(`Реплика ${segment.id}: совпало ${Math.round(segmentRatio * 100)}% текста, требуется 70%`);
+    if (!boundarySegment && (!matched.length || segmentRatio < requiredRatio)) {
+      warnings.push(`${segment.id}: подтверждено ${Math.round(segmentRatio * 100)}% текста, поэтому интерактивность отключена только для этой реплики`);
+      return;
+    }
+    if (matched[0] <= previousEnd) matched = matched.filter((wordIndex) => wordIndex > previousEnd);
+    if (!matched.length) { warnings.push(`${segment.id}: граница проходит внутри того же печатного слова, отдельная область не создана`); return; }
     const first = matched[0], last = matched.at(-1)!;
-    if (first <= previousEnd) throw new Error(`Пересечение реплик Sefaria у ${segment.id}`);
     previousEnd = last;
     const words = pdfWords.slice(first, last + 1);
     const lines = lineRects(words);
     blocks[segment.id] = { words, lines };
   });
-  return blocks;
+  return { blocks, warnings };
 }
 
 function alignDiburimToPdf(pdfWords: WordRect[], comments: CommentaryLink[]) {
@@ -300,9 +305,11 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
         const pdfWords = makeWords((item) => item.fontName === gemaraFont && item.transform[5] > 120 && item.transform[5] < 1080);
         const rashiWords = makeWords((item) => item.transform[4] > 400 && item.transform[5] > 120 && item.transform[5] < 1080);
         const tosafotWords = makeWords((item) => item.transform[4] < 212 && item.transform[5] > 120 && item.transform[5] < 1080);
-        let locatedBlocks: Record<string, LocatedBlock> = {}, locatedCommentary: Record<string, LocatedBlock> = {}, mappingError = "";
+        let locatedBlocks: Record<string, LocatedBlock> = {}, locatedCommentary: Record<string, LocatedBlock> = {}, mappingError = "", mappingNotice = "";
         try {
-          locatedBlocks = alignSefariaToPdf(pdfWords, segments);
+          const alignment = alignSefariaToPdf(pdfWords, segments);
+          locatedBlocks = alignment.blocks;
+          mappingNotice = alignment.warnings.join(" · ");
           locatedCommentary = {
             ...alignDiburimToPdf(rashiWords, commentary.filter((comment) => comment.commentator === "Rashi")),
             ...alignDiburimToPdf(tosafotWords, commentary.filter((comment) => comment.commentator === "Tosafot")),
@@ -321,7 +328,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
         if (!context) throw new Error("Canvas unavailable");
         const task = page.render({ canvas, canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0] });
         renderTaskRef.current = task; await task.promise;
-        if (!cancelled) { setStatus("ready"); setAlignmentWarning(mappingError); if (!mappingError) onBlockLocated(locatedBlocks[selectedBlock] ? selectedBlock : Object.keys(locatedBlocks)[0]); }
+        if (!cancelled) { setStatus("ready"); setAlignmentWarning(mappingError || mappingNotice); if (!mappingError) onBlockLocated(locatedBlocks[selectedBlock] ? selectedBlock : Object.keys(locatedBlocks)[0]); }
       } catch (error) {
         if (!cancelled && (error as { name?: string }).name !== "RenderingCancelledException") {
           console.error("PDF rendering failed", error); setErrorMessage(error instanceof Error ? error.message : String(error)); setStatus("error");
@@ -342,7 +349,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
     <canvas ref={canvasRef} aria-label={`Оригинальный PDF, ${label}`} />
     {status === "loading" && <div className="pdfStatus">Загружаем оригинальный PDF…</div>}
     {status === "error" && <div className="pdfStatus error">Не удалось связать лист с текстом.<small>{errorMessage}</small><a href={pdfUrl}>Открыть оригинал</a></div>}
-    {status === "ready" && alignmentWarning && <div className="alignmentWarning">Лист открыт, интерактивная разметка отключена: {alignmentWarning}</div>}
+    {status === "ready" && alignmentWarning && <div className="alignmentWarning">{Object.keys(blocks).length ? "Лист размечен частично: " : "Лист открыт, интерактивная разметка отключена: "}{alignmentWarning}</div>}
     {status === "ready" && <div className="pdfInteraction" aria-label="Интерактивный слой оригинального листа" data-active-comment={activeComment ?? ""} data-gemara-cue={gemaraCue ? "yes" : "no"}>
       {selected?.lines.map((rect, index) => <span key={`selected-${index}`} className="textHighlight selectedHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
       {preview?.lines.map((rect, index) => <span key={`preview-${index}`} className="textHighlight hoverHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
