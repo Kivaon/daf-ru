@@ -2,14 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { PdfDafViewer } from "./PdfDafViewer";
-
-const segments = [
-  { ref: "Бехорот 2а:1", kind: "Мишна", text: "הַלּוֹקֵחַ עוּבַּר חֲמוֹרוֹ שֶׁל נָכְרִי, וְהַמּוֹכֵר לוֹ, אַף עַל פִּי שֶׁאֵינוֹ רַשַּׁאי, הַמִּשְׁתַּתֵּף לוֹ, וְהַמְקַבֵּל הֵימֶנּוּ, וְהַנּוֹתֵן לוֹ בְּקַבָּלָה — פָּטוּר מִן הַבְּכוֹרָה." },
-  { ref: "Бехорот 2а:2", kind: "Гемара", text: "כׇּל הָנֵי לְמָה לִי?" },
-  { ref: "Бехорот 2а:3", kind: "Гемара", text: "צְרִיכִי, דְּאִי תְּנָא לוֹקֵחַ — הֲוָה אָמֵינָא מִשּׁוּם דְּקָא מַיְיתֵי לַהּ לִקְדוּשָּׁה, אֲבָל מוֹכֵר דְּקָא מַפְקַע לַהּ מִקְּדוּשָּׁה — אֵימָא לִיקְנְסֵיהּ, קָא מַשְׁמַע לַן." },
-  { ref: "Бехорот 2а:4", kind: "Гемара", text: "וְהַמִּשְׁתַּתֵּף לוֹ, לְמָה לִי? לְאַפּוֹקֵי מִדְּרַבִּי יְהוּדָה, דְּאָמַר: שׁוּתָּפוּת גּוֹיִ חַיֶּיבֶת בִּבְכוֹרָה, קָמַשְׁמַע לַן דִּפְטוּרָה מִן הַבְּכוֹרָה." },
-  { ref: "Бехорот 2а:5", kind: "Гемара", text: "וְהַמְקַבֵּל, לְמָה לִי? מִשּׁוּם דְּקָא בָּעֵי לְמִיתְנֵי וְהַנּוֹתֵן לוֹ בְּקַבָּלָה." },
-];
+import { BEKHOROT_2A_SEGMENTS } from "./bekhorot2a";
 
 export default function Home() {
   const [bounds, setBounds] = useState<[number, number]>([2, 2]);
@@ -34,7 +27,7 @@ export default function Home() {
   }, []);
   useEffect(() => { localStorage.setItem("havruta-position", JSON.stringify(bounds)); }, [bounds]);
   const shrink = () => setBounds(([start, end]) => end > start ? [start + 1, end] : [start, end]);
-  const expand = () => setBounds(([start, end]) => [Math.max(0, start - 1), Math.min(segments.length - 1, end + 1)]);
+  const expand = () => setBounds(([start, end]) => [Math.max(0, start - 1), Math.min(BEKHOROT_2A_SEGMENTS.length - 1, end + 1)]);
   const captureSelection = () => {
     const selection = window.getSelection();
     const text = selection?.toString().trim() || "";
@@ -50,6 +43,7 @@ export default function Home() {
     localStorage.setItem("havruta-dictionary", JSON.stringify(next));
     setPicked(null);
   };
+  const selectedSegment = BEKHOROT_2A_SEGMENTS.find((segment) => segment.id === selectedBlock);
 
   return <main>
     <header className="topbar">
@@ -79,7 +73,7 @@ export default function Home() {
         </section>
         <div className="rashiHeading"><span>Раши к этому блоку</span><i>2</i></div>
         <section className="analysisCard rashiCard"><div className="rashiNumber">1</div><div className="hebrew" lang="he" dir="rtl">מייתי לה לקדושה — שתהא שובתת בשבת וכיון דמצוה עביד ליכא למיקנסיה</div><h3>Точный перевод</h3><p>«Приводит её к святости» — чтобы она отдыхала в Шаббат; а поскольку он совершает заповедь, нет оснований штрафовать его.</p><div className="explanation compact"><span>Смысл</span><p>Покупка животного у нееврея вводит его в режим еврейских обязанностей, включая покой в Шаббат.</p></div></section>
-        <section className="analysisCard rashiCard"><div className="rashiNumber">2</div><div className="hebrew" lang="he" dir="rtl">אימא ליקנסיה — לפדות העובר מן העובד כוכבים וליתנו לכהן</div><h3>Точный перевод</h3><p>«Можно было бы сказать: оштрафуем его» — [обязав] выкупить зародыш у нееврея и отдать его коэну.</p><div className="explanation compact"><span>Смысл</span><p>Предполагаемый штраф возвращает первенца в сферу заповеди: продавец должен был бы выкупить его обратно и передать коэну.</p></div></section></> : <section className="analysisCard gemaraCard"><div className="cardTitle"><span>•</span><div><small>ГЕМАРА · БЛОК {selectedBlock.replace("2a", "2а")}</small><h2>Блок найден по выбранному слову</h2></div></div>{selectedBlock === "2a:4" && <div className="hebrew" lang="he" dir="rtl">וְהַמִּשְׁתַּתֵּף לוֹ, לְמָה לִי? לְאַפּוֹקֵי מִדְּרַבִּי יְהוּדָה, דְּאָמַר: שׁוּתָּפוּת גּוֹיִ חַיֶּיבֶת בִּבְכוֹרָה, קָמַשְׁמַע לַן דִּפְטוּרָה מִן הַבְּכוֹרָה.</div>}<div className="explanation"><span>Тест выбора</span><p>Слово найдено на оригинальном листе, определён блок {selectedBlock.replace("2a", "2а")} и выделение переключено на его точные границы. Разбор этого блока пока не сохранён.</p></div></section>}
+        <section className="analysisCard rashiCard"><div className="rashiNumber">2</div><div className="hebrew" lang="he" dir="rtl">אימא ליקנסיה — לפדות העובר מן העובד כוכבים וליתנו לכהן</div><h3>Точный перевод</h3><p>«Можно было бы сказать: оштрафуем его» — [обязав] выкупить зародыш у нееврея и отдать его коэну.</p><div className="explanation compact"><span>Смысл</span><p>Предполагаемый штраф возвращает первенца в сферу заповеди: продавец должен был бы выкупить его обратно и передать коэну.</p></div></section></> : <section className="analysisCard gemaraCard"><div className="cardTitle"><span>•</span><div><small>{selectedSegment?.kind.toUpperCase() ?? "ТЕКСТ"} · РЕПЛИКА {selectedBlock.replace("2a", "2а")}</small><h2>Разбор пока не сохранён</h2></div></div>{selectedSegment && <div className="hebrew" lang="he" dir="rtl">{selectedSegment.text}</div>}<div className="explanation"><span>Источник</span><p>Показан проверенный оригинал реплики из Sefaria. Перевод и объяснение для неё пока не сохранены.</p></div></section>}
         </>}
       </article>
     </section>

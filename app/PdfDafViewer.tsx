@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { BEKHOROT_2A_SEGMENTS } from "./bekhorot2a";
 
 type TextRect = { left: number; top: number; width: number; height: number };
 type WordRect = TextRect & { word: string; line: number };
@@ -26,6 +27,77 @@ const glyphs: Record<string, string> = {
   "Û":"ף", "ˆ":"צ", "ı":"ץ", "˜":"ק", "¯":"ר", "˘":"ש", "˙":"ת",
 };
 const decodeWord = (raw: string) => Array.from(raw).map((char) => glyphs[char] ?? char).reverse().join("").replace("'", "׳");
+const normalizeHebrew = (text: string) => text.normalize("NFD").replace(/[\u0591-\u05C7]/g, "").replace(/[^\u05D0-\u05EA]/g, "");
+
+function editionWords(text: string) {
+  return text.split(/\s+/).flatMap((word) => {
+    const normalized = normalizeHebrew(word);
+    if (normalized === "נכרי" || normalized === "גוי") return ["עובד", "כוכבים"];
+    if (normalized === "הגוי") return ["העובד", "כוכבים"];
+    return normalized ? [normalized] : [];
+  });
+}
+
+function alignSefariaToPdf(pdfWords: WordRect[]) {
+  const sourceChars: Array<{ char: string; segment: number }> = [];
+  BEKHOROT_2A_SEGMENTS.forEach((segment, segmentIndex) => {
+    editionWords(segment.text).forEach((word) => Array.from(word).forEach((char) => sourceChars.push({ char, segment: segmentIndex })));
+  });
+  const pdfChars: Array<{ char: string; word: number }> = [];
+  pdfWords.forEach((word, wordIndex) => Array.from(normalizeHebrew(word.word)).forEach((char) => pdfChars.push({ char, word: wordIndex })));
+  const m = sourceChars.length, n = pdfChars.length, width = n + 1;
+  const costs = new Uint16Array((m + 1) * width);
+  const path = new Uint8Array((m + 1) * width);
+  for (let i = 1; i <= m; i++) { costs[i * width] = i; path[i * width] = 1; }
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+    const index = i * width + j;
+    const diagonal = costs[(i - 1) * width + j - 1] + (sourceChars[i - 1].char === pdfChars[j - 1].char ? 0 : 2);
+    const deletion = costs[(i - 1) * width + j] + 1;
+    const insertion = costs[index - 1] + 1;
+    if (diagonal <= deletion && diagonal <= insertion) { costs[index] = diagonal; path[index] = 0; }
+    else if (deletion <= insertion) { costs[index] = deletion; path[index] = 1; }
+    else { costs[index] = insertion; path[index] = 2; }
+  }
+  let end = 0;
+  for (let j = 1; j <= n; j++) if (costs[m * width + j] < costs[m * width + end]) end = j;
+  const matchedWords = BEKHOROT_2A_SEGMENTS.map(() => new Set<number>());
+  const exact = BEKHOROT_2A_SEGMENTS.map(() => 0);
+  const totals = BEKHOROT_2A_SEGMENTS.map(() => 0);
+  sourceChars.forEach(({ segment }) => totals[segment]++);
+  let i = m, j = end;
+  while (i > 0) {
+    const direction = path[i * width + j];
+    if (direction === 0 && j > 0) {
+      const source = sourceChars[i - 1], pdf = pdfChars[j - 1];
+      matchedWords[source.segment].add(pdf.word);
+      if (source.char === pdf.char) exact[source.segment]++;
+      i--; j--;
+    } else if (direction === 1 || j === 0) i--;
+    else j--;
+  }
+  if (exact.reduce((sum, value) => sum + value, 0) / totals.reduce((sum, value) => sum + value, 0) < .84) {
+    throw new Error("Текст листа не прошёл общую сверку с Sefaria");
+  }
+  const blocks: Record<string, LocatedBlock> = {};
+  let previousEnd = -1;
+  BEKHOROT_2A_SEGMENTS.forEach((segment, segmentIndex) => {
+    const matched = [...matchedWords[segmentIndex]].sort((a, b) => a - b);
+    if (!matched.length || exact[segmentIndex] / totals[segmentIndex] < .70) throw new Error(`Реплика Sefaria ${segment.id} не прошла проверку`);
+    const first = matched[0], last = matched.at(-1)!;
+    if (first <= previousEnd) throw new Error(`Пересечение реплик Sefaria у ${segment.id}`);
+    previousEnd = last;
+    const words = pdfWords.slice(first, last + 1);
+    const lines = Array.from(new Set(words.map((word) => word.line))).map((line) => {
+      const row = words.filter((word) => word.line === line);
+      const left = Math.min(...row.map((word) => word.left)), right = Math.max(...row.map((word) => word.left + word.width));
+      const top = Math.min(...row.map((word) => word.top)), bottom = Math.max(...row.map((word) => word.top + word.height));
+      const fullHeight = bottom - top;
+      return { left, top: top + fullHeight * .48, width: right - left, height: fullHeight * .46 };
+    });
+    blocks[segment.id] = { words, lines };
+  });
+  return blocks;
+}
 
 export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: {
   zoom: number; selectedBlock: string; onSelect: (blockId: string, word: string) => void; onBlockLocated: () => void;
@@ -57,53 +129,23 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
         const viewport = page.getViewport({ scale: zoom });
         const textContent = await page.getTextContent();
         const items = textContent.items.filter((item): item is typeof item & { str: string; transform: number[]; width: number; height: number } => "str" in item);
-        const start = items.findIndex((item) => item.str === "ÏÎ" && item.transform[4] > 210 && item.transform[4] < 235 && item.transform[5] > 945);
-        if (start < 1) throw new Error("Не найден проверенный текстовый блок на листе");
         const [a, b, c, d, e, f] = viewport.transform;
         const toViewport = (x: number, y: number) => ({ x: a * x + c * y + e, y: b * x + d * y + f });
-        const locate = (parts: Array<{ item: typeof items[number]; take?: number[] }>): LocatedBlock => {
-          const baselines: number[] = [];
-          const words = parts.flatMap(({ item, take }) => {
-            let line = baselines.findIndex((baseline) => Math.abs(baseline - item.transform[5]) < 2);
-            if (line < 0) { baselines.push(item.transform[5]); line = baselines.length - 1; }
+        const pdfWords = items
+          .filter((item) => item.transform[4] >= 218 && item.transform[4] <= 395 && item.transform[5] > 600 && item.transform[5] < 1080)
+          .flatMap((item) => {
             const p1 = toViewport(item.transform[4], item.transform[5]);
             const p2 = toViewport(item.transform[4] + item.width, item.transform[5] + item.height);
             const left = Math.min(p1.x, p2.x), top = Math.min(p1.y, p2.y), width = Math.abs(p2.x - p1.x), height = Math.abs(p2.y - p1.y);
-            return Array.from(item.str.matchAll(/\S+/g)).flatMap((match, wordIndex) => !take || take.includes(wordIndex) ? [{
+            return Array.from(item.str.matchAll(/\S+/g)).map((match) => ({
               left: left + width * ((match.index ?? 0) / item.str.length), top,
               width: Math.max(2, width * (match[0].length / item.str.length)), height,
-              word: decodeWord(match[0]), line,
-            }] : []);
-          });
-          const lines = Array.from(new Set(words.map((word) => word.line))).map((line) => {
-            const row = words.filter((word) => word.line === line);
-            const left = Math.min(...row.map((word) => word.left)), right = Math.max(...row.map((word) => word.left + word.width));
-            const top = Math.min(...row.map((word) => word.top)), bottom = Math.max(...row.map((word) => word.top + word.height));
-            const fullHeight = bottom - top;
-            return { left, top: top + fullHeight * .48, width: right - left, height: fullHeight * .46 };
-          });
-          return { lines, words };
-        };
-        const part = (offset: number, take?: number[]) => ({ item: items[start + offset], take });
-        const mishnahParts = items
-          .filter((item) => item.transform[4] >= 218 && item.transform[4] <= 395 && item.transform[5] < 1080 && (
-            item.transform[5] > 965 || (item.transform[5] > 945 && item.transform[4] >= 250)
-          ))
-          .map((item) => ({ item }));
-        const locatedBlocks = {
-          "2a:1": locate(mishnahParts),
-          "2a:2": locate([part(-1), part(0), part(1, [6, 7, 8])]),
-          "2a:3": locate([part(1, [0, 1, 2, 3, 4, 5]), part(2), part(3)]),
-          "2a:4": locate([6, 8, 10, 12, 13].map((offset) => part(offset))),
-          "2a:5": locate([part(14), part(15, [6, 7])]),
-          "2a:6": locate([part(15, [0, 1, 2, 3, 4, 5]), part(16), part(17), part(18)]),
-          "2a:7": locate([part(20), part(21)]),
-          "2a:8": locate([part(23), part(24), part(25), part(26), part(27, [1, 2, 3, 4, 5, 6, 7])]),
-          "2a:9": locate([part(27, [0]), part(28)]),
-          "2a:10": locate([part(29), part(30)]),
-          "2a:11": locate([part(31), part(32, [5, 6])]),
-          "2a:12": locate([part(32, [0, 1, 2, 3, 4]), part(33), part(34), part(35), part(37), part(38)]),
-        };
+              word: decodeWord(match[0]), line: Math.round(item.transform[5] / 2),
+            }));
+          })
+          .filter((word) => normalizeHebrew(word.word))
+          .sort((first, second) => second.line - first.line || second.left - first.left);
+        const locatedBlocks = alignSefariaToPdf(pdfWords);
         if (cancelled || !canvasRef.current) return;
         const canvas = canvasRef.current;
         const ratio = Math.min(window.devicePixelRatio || 1, 2);
