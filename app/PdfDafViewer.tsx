@@ -40,6 +40,29 @@ function editionWords(text: string) {
   });
 }
 
+function wordDistance(first: string, second: string) {
+  const width = second.length + 1;
+  const distances = new Uint16Array((first.length + 1) * width);
+  for (let index = 0; index <= first.length; index++) distances[index * width] = index;
+  for (let index = 0; index <= second.length; index++) distances[index] = index;
+  for (let row = 1; row <= first.length; row++) for (let column = 1; column <= second.length; column++) {
+    distances[row * width + column] = Math.min(
+      distances[(row - 1) * width + column] + 1,
+      distances[row * width + column - 1] + 1,
+      distances[(row - 1) * width + column - 1] + (first[row - 1] === second[column - 1] ? 0 : 1),
+    );
+  }
+  return distances[first.length * width + second.length];
+}
+
+// The Vilna PDF and Sefaria occasionally differ by a mater lectionis or one
+// damaged glyph. Such a spelling difference must not become a semantic border.
+function sameEditionWord(first: string, second: string) {
+  if (first === second) return true;
+  const longest = Math.max(first.length, second.length);
+  return longest >= 4 && wordDistance(first, second) <= (longest >= 8 ? 2 : 1);
+}
+
 function lineRects(words: WordRect[]) {
   const rectangles: TextRect[] = [];
   Array.from(new Set(words.map((word) => word.line))).forEach((line) => {
@@ -72,14 +95,18 @@ function matchBoundaryWords(sourceText: string, candidates: WordRect[], offset: 
   const lengths = new Uint16Array((source.length + 1) * width);
   for (let i = 1; i <= source.length; i++) for (let j = 1; j <= target.length; j++) {
     const index = i * width + j;
-    lengths[index] = source[i - 1] === target[j - 1]
+    lengths[index] = sameEditionWord(source[i - 1], target[j - 1])
       ? lengths[(i - 1) * width + j - 1] + 1
       : Math.max(lengths[(i - 1) * width + j], lengths[index - 1]);
   }
   const matched: number[] = [];
   let exactCharacters = 0, i = source.length, j = target.length;
   while (i > 0 && j > 0) {
-    if (source[i - 1] === target[j - 1]) { matched.push(offset + j - 1); exactCharacters += source[i - 1].length; i--; j--; }
+    if (sameEditionWord(source[i - 1], target[j - 1])) {
+      matched.push(offset + j - 1);
+      exactCharacters += Math.min(source[i - 1].length, target[j - 1].length);
+      i--; j--;
+    }
     else if (lengths[(i - 1) * width + j] >= lengths[i * width + j - 1]) i--;
     else j--;
   }
