@@ -23,7 +23,7 @@ export function PdfDafViewer({ zoom, onSelect }: { zoom: number; onSelect: () =>
         setStatus("loading");
         const pdfjs = await import("pdfjs-dist");
         pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-        const pdf = await pdfjs.getDocument("/bekhorot-2a.pdf").promise;
+        const pdf = await pdfjs.getDocument({ url: "/bekhorot-2a.pdf" }).promise;
         const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: zoom });
         if (cancelled || !canvasRef.current) return;
@@ -49,7 +49,10 @@ export function PdfDafViewer({ zoom, onSelect }: { zoom: number; onSelect: () =>
         await task.promise;
         if (!cancelled) setStatus("ready");
       } catch (error) {
-        if (!cancelled && (error as { name?: string }).name !== "RenderingCancelledException") setStatus("error");
+        if (!cancelled && (error as { name?: string }).name !== "RenderingCancelledException") {
+          console.error("PDF rendering failed", error);
+          setStatus("error");
+        }
       }
     }
 
