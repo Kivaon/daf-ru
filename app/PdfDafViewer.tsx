@@ -87,9 +87,9 @@ export function PdfDafViewer({ zoom, onSelect, onBlockLocated }: { zoom: number;
             const portion = match[0].length / item.str.length;
             return {
               left: lineLeft + lineWidth * from,
-              top: lineTop + lineHeight * .23,
+              top: lineTop,
               width: Math.max(2, lineWidth * portion),
-              height: lineHeight * .62,
+              height: lineHeight,
               word: visualWords[line]?.[wordIndex] ?? "слово",
               line: line < 2 ? 0 : line - 1,
             };
@@ -101,7 +101,8 @@ export function PdfDafViewer({ zoom, onSelect, onBlockLocated }: { zoom: number;
           const right = Math.max(...words.map((word) => word.left + word.width));
           const top = Math.min(...words.map((word) => word.top));
           const bottom = Math.max(...words.map((word) => word.top + word.height));
-          return { left, top, width: right - left, height: bottom - top };
+          const fullHeight = bottom - top;
+          return { left, top: top + fullHeight * .48, width: right - left, height: fullHeight * .46 };
         });
         if (cancelled || !canvasRef.current) return;
 
