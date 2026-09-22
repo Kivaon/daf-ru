@@ -43,6 +43,8 @@ function editionWords(text: string) {
 function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
   const sourceChars: Array<{ char: string; segment: number }> = [];
   segments.forEach((segment, segmentIndex) => {
+    const pageStartsTractate = segmentIndex === 0 && segment.id.startsWith("2a:");
+    if (!pageStartsTractate && (segmentIndex === 0 || segmentIndex === segments.length - 1)) return;
     editionWords(segment.text).forEach((word) => Array.from(word).forEach((char) => sourceChars.push({ char, segment: segmentIndex })));
   });
   const pdfChars: Array<{ char: string; word: number }> = [];
@@ -77,15 +79,24 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
     } else if (direction === 1 || j === 0) i--;
     else j--;
   }
-  const overallRatio = exact.reduce((sum, value) => sum + value, 0) / totals.reduce((sum, value) => sum + value, 0);
+  const validationExact = exact.filter((_, index) => totals[index] > 0);
+  const validationTotals = totals.filter((value) => value > 0);
+  const exactCharacters = validationExact.reduce((sum, value) => sum + value, 0);
+  const totalCharacters = validationTotals.reduce((sum, value) => sum + value, 0);
+  const overallRatio = exactCharacters / totalCharacters;
   if (overallRatio < .84) {
-    throw new Error(`Текст листа не прошёл общую сверку с Sefaria (${Math.round(overallRatio * 100)}%)`);
+    throw new Error(`Сверка текста Гемары: совпало ${Math.round(overallRatio * 100)}% (${exactCharacters} из ${totalCharacters} букв; требуется 84%). Пограничные реплики страницы не учитывались`);
   }
   const blocks: Record<string, LocatedBlock> = {};
   let previousEnd = -1;
   segments.forEach((segment, segmentIndex) => {
     const matched = [...matchedWords[segmentIndex]].sort((a, b) => a - b);
-    if (!matched.length || exact[segmentIndex] / totals[segmentIndex] < .70) throw new Error(`Реплика Sefaria ${segment.id} не прошла проверку`);
+    const boundarySegment = segmentIndex === 0 || segmentIndex === segments.length - 1;
+    if (boundarySegment && totals[segmentIndex] === 0) return;
+    const requiredRatio = boundarySegment ? .18 : .70;
+    const segmentRatio = exact[segmentIndex] / totals[segmentIndex];
+    if (boundarySegment && (!matched.length || segmentRatio < requiredRatio)) return;
+    if (!matched.length || segmentRatio < requiredRatio) throw new Error(`Реплика ${segment.id}: совпало ${Math.round(segmentRatio * 100)}% текста, требуется 70%`);
     const first = matched[0], last = matched.at(-1)!;
     if (first <= previousEnd) throw new Error(`Пересечение реплик Sefaria у ${segment.id}`);
     previousEnd = last;
@@ -179,7 +190,7 @@ function locateDiburInGemara(words: WordRect[], dibur: string) {
 }
 
 export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pdfUrl = "/bekhorot-2a.pdf", label = "Бехорот 2а", segments = [], commentary = [] }: {
-  zoom: number; selectedBlock: string; onSelect: (blockId: string, word: string) => void; onBlockLocated: () => void;
+  zoom: number; selectedBlock: string; onSelect: (blockId: string, word: string) => void; onBlockLocated: (blockId?: string) => void;
   pdfUrl?: string; label?: string; segments?: DafSegment[]; commentary?: CommentaryLink[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -205,14 +216,14 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
         const pdf = await pdfjsApi.getDocument({ data: new Uint8Array(await response.arrayBuffer()) }).promise as {
           getPage: (pageNumber: number) => Promise<{
             getViewport: (options: { scale: number }) => { width: number; height: number; transform: number[] };
-            getTextContent: () => Promise<{ items: Array<Record<string, unknown>> }>;
+            getTextContent: () => Promise<{ items: Array<Record<string, unknown>>; styles: Record<string, { fontFamily?: string }> }>;
             render: (options: Record<string, unknown>) => { promise: Promise<void>; cancel: () => void };
           }>;
         };
         const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: zoom });
         const textContent = await page.getTextContent();
-        const items = textContent.items.filter((item): item is typeof item & { str: string; transform: number[]; width: number; height: number } => "str" in item);
+        const items = textContent.items.filter((item): item is typeof item & { str: string; transform: number[]; width: number; height: number; fontName: string } => "str" in item && "fontName" in item);
         const [a, b, c, d, e, f] = viewport.transform;
         const toViewport = (x: number, y: number) => ({ x: a * x + c * y + e, y: b * x + d * y + f });
         const makeWords = (filter: (item: typeof items[number]) => boolean) => items
@@ -229,7 +240,17 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
           })
           .filter((word) => normalizeHebrew(word.word))
           .sort((first, second) => second.line - first.line || second.left - first.left);
-        const pdfWords = makeWords((item) => item.transform[4] >= 204 && item.transform[4] <= 405 && item.transform[5] > 120 && item.transform[5] < 1080);
+        // The Vilna Gemara column is not rectangular: it widens and narrows around
+        // Rashi and Tosafot. Identify its typeface first, then retain its real geometry.
+        const gemaraFontScores = new Map<string, number>();
+        items.forEach((item) => {
+          if (item.transform[5] <= 120 || item.transform[5] >= 1080 || item.height < 11.5) return;
+          const hebrewLength = normalizeHebrew(decodeWord(item.str)).length;
+          if (hebrewLength) gemaraFontScores.set(item.fontName, (gemaraFontScores.get(item.fontName) ?? 0) + hebrewLength);
+        });
+        const gemaraFont = [...gemaraFontScores].sort((first, second) => second[1] - first[1])[0]?.[0];
+        if (!gemaraFont) throw new Error("PDF не содержит распознаваемого слоя текста Гемары");
+        const pdfWords = makeWords((item) => item.fontName === gemaraFont && item.transform[5] > 120 && item.transform[5] < 1080);
         const rashiWords = makeWords((item) => item.transform[4] > 400 && item.transform[5] > 120 && item.transform[5] < 1080);
         const tosafotWords = makeWords((item) => item.transform[4] < 212 && item.transform[5] > 120 && item.transform[5] < 1080);
         let locatedBlocks: Record<string, LocatedBlock> = {}, locatedCommentary: Record<string, LocatedBlock> = {}, mappingError = "";
@@ -253,7 +274,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
         if (!context) throw new Error("Canvas unavailable");
         const task = page.render({ canvas, canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0] });
         renderTaskRef.current = task; await task.promise;
-        if (!cancelled) { setStatus("ready"); setAlignmentWarning(mappingError); if (!mappingError) onBlockLocated(); }
+        if (!cancelled) { setStatus("ready"); setAlignmentWarning(mappingError); if (!mappingError) onBlockLocated(locatedBlocks[selectedBlock] ? selectedBlock : Object.keys(locatedBlocks)[0]); }
       } catch (error) {
         if (!cancelled && (error as { name?: string }).name !== "RenderingCancelledException") {
           console.error("PDF rendering failed", error); setErrorMessage(error instanceof Error ? error.message : String(error)); setStatus("error");
@@ -281,7 +302,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
       {linkedComments.flatMap((comment) => (commentaryBlocks[comment.ref]?.lines ?? []).map((rect, index) => <span key={`${comment.ref}-${index}`} className={`textHighlight commentaryHighlight ${comment.commentator === "Rashi" ? "rashiPdfHighlight" : "tosafotPdfHighlight"}`} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />))}
       {gemaraCue?.lines.map((rect, index) => <span key={`gemara-cue-${index}`} className="textHighlight gemaraCueHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
       {linkedComments.flatMap((comment) => (commentaryBlocks[comment.ref]?.words ?? []).map((rect, index) => <button key={`comment-hit-${comment.ref}-${index}`} className="commentaryHit" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} onPointerEnter={() => setHoveredComment(comment.ref)} onPointerLeave={() => setHoveredComment(null)} onFocus={() => setHoveredComment(comment.ref)} onBlur={() => setHoveredComment(null)} onClick={() => setPinnedComment((current) => current === comment.ref ? null : comment.ref)} aria-label={`${comment.commentator === "Rashi" ? "Раши" : "Тосафот"}: ${comment.dibur}; показать место в Гемаре`} />))}
-      {Object.entries(blocks).flatMap(([blockId, block]) => block.words.map((rect, index) => <button key={`${blockId}-${index}`} className="wordHit" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} onPointerEnter={() => setHoveredBlock(blockId)} onPointerLeave={() => setHoveredBlock(null)} onFocus={() => setHoveredBlock(blockId)} onBlur={() => setHoveredBlock(null)} onClick={() => blockId !== selectedBlock && onSelect(blockId, rect.word)} aria-label={`Слово ${rect.word}; реплика Бехорот ${blockId}`} />))}
+      {Object.entries(blocks).flatMap(([blockId, block]) => block.words.map((rect, index) => <button key={`${blockId}-${index}`} className="wordHit" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} onPointerEnter={() => setHoveredBlock(blockId)} onPointerLeave={() => setHoveredBlock(null)} onFocus={() => setHoveredBlock(blockId)} onBlur={() => setHoveredBlock(null)} onClick={() => blockId !== selectedBlock && onSelect(blockId, rect.word)} aria-label={`Слово ${rect.word}; реплика ${label} ${blockId}`} />))}
     </div>}
   </div>;
 }
