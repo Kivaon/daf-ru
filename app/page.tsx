@@ -22,7 +22,8 @@ export default function Home() {
   const [selectedBlock, setSelectedBlock] = useState("2a:2-3");
   const locateBlock = useCallback(() => setBlockLocated(true), []);
   const selectPdfWord = useCallback((blockId: string, word: string) => {
-    setSelectedBlock(blockId); setSelectedWord(word); setBounds(blockId === "2a:4" ? [3, 3] : [1, 2]);
+    const [from, to = from] = blockId.split(":")[1].split("-").map(Number);
+    setSelectedBlock(blockId); setSelectedWord(word); setBounds([from - 1, to - 1]);
   }, []);
 
   useEffect(() => {
@@ -78,7 +79,7 @@ export default function Home() {
         </section>
         <div className="rashiHeading"><span>Раши к этому блоку</span><i>2</i></div>
         <section className="analysisCard rashiCard"><div className="rashiNumber">1</div><div className="hebrew" lang="he" dir="rtl">מייתי לה לקדושה — שתהא שובתת בשבת וכיון דמצוה עביד ליכא למיקנסיה</div><h3>Точный перевод</h3><p>«Приводит её к святости» — чтобы она отдыхала в Шаббат; а поскольку он совершает заповедь, нет оснований штрафовать его.</p><div className="explanation compact"><span>Смысл</span><p>Покупка животного у нееврея вводит его в режим еврейских обязанностей, включая покой в Шаббат.</p></div></section>
-        <section className="analysisCard rashiCard"><div className="rashiNumber">2</div><div className="hebrew" lang="he" dir="rtl">אימא ליקנסיה — לפדות העובר מן העובד כוכבים וליתנו לכהן</div><h3>Точный перевод</h3><p>«Можно было бы сказать: оштрафуем его» — [обязав] выкупить зародыш у нееврея и отдать его коэну.</p><div className="explanation compact"><span>Смысл</span><p>Предполагаемый штраф возвращает первенца в сферу заповеди: продавец должен был бы выкупить его обратно и передать коэну.</p></div></section></> : <section className="analysisCard gemaraCard"><div className="cardTitle"><span>02</span><div><small>ГЕМАРА · БЛОК 2а:4</small><h2>Блок найден по выбранному слову</h2></div></div><div className="hebrew" lang="he" dir="rtl">וְהַמִּשְׁתַּתֵּף לוֹ, לְמָה לִי? לְאַפּוֹקֵי מִדְּרַבִּי יְהוּדָה, דְּאָמַר: שׁוּתָּפוּת גּוֹיִ חַיֶּיבֶת בִּבְכוֹרָה, קָמַשְׁמַע לַן דִּפְטוּרָה מִן הַבְּכוֹרָה.</div><div className="explanation"><span>Тест выбора</span><p>Слово найдено на оригинальном листе, определён блок 2а:4 и выделение переключено на его границы. Разбор этого блока пока не сохранён.</p></div></section>}
+        <section className="analysisCard rashiCard"><div className="rashiNumber">2</div><div className="hebrew" lang="he" dir="rtl">אימא ליקנסיה — לפדות העובר מן העובד כוכבים וליתנו לכהן</div><h3>Точный перевод</h3><p>«Можно было бы сказать: оштрафуем его» — [обязав] выкупить зародыш у нееврея и отдать его коэну.</p><div className="explanation compact"><span>Смысл</span><p>Предполагаемый штраф возвращает первенца в сферу заповеди: продавец должен был бы выкупить его обратно и передать коэну.</p></div></section></> : <section className="analysisCard gemaraCard"><div className="cardTitle"><span>•</span><div><small>ГЕМАРА · БЛОК {selectedBlock.replace("2a", "2а")}</small><h2>Блок найден по выбранному слову</h2></div></div>{selectedBlock === "2a:4" && <div className="hebrew" lang="he" dir="rtl">וְהַמִּשְׁתַּתֵּף לוֹ, לְמָה לִי? לְאַפּוֹקֵי מִדְּרַבִּי יְהוּדָה, דְּאָמַר: שׁוּתָּפוּת גּוֹיִ חַיֶּיבֶת בִּבְכוֹרָה, קָמַשְׁמַע לַן דִּפְטוּרָה מִן הַבְּכוֹרָה.</div>}<div className="explanation"><span>Тест выбора</span><p>Слово найдено на оригинальном листе, определён блок {selectedBlock.replace("2a", "2а")} и выделение переключено на его точные границы. Разбор этого блока пока не сохранён.</p></div></section>}
         </>}
       </article>
     </section>

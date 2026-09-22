@@ -20,17 +20,12 @@ function loadPdfJs() {
   });
 }
 
-const firstBlockWords = [
-  ["גמ׳"], ["כל"],
-  ["משום", "ה״א", "לוקח", "תנא", "דאי", "צריכי", "לי", "למה", "הני"],
-  ["דקא", "מוכר", "אבל", "לקדושה", "לה", "מייתי", "דקא"],
-  ["קמ״ל", "ליקנסיה", "אימא", "מקדושה", "לה", "מפקע"],
-];
-const secondBlockWords = [
-  ["לי", "למה", "לו", "והמשתתף"], ["מדרבי", "לאפוקי"], ["דאמר", "יהודה"],
-  ["חייבת", "כוכבים", "עובד", "שותפות"],
-  ["הבכורה", "מן", "דפטורה", "לן", "קמשמע", "בבכורה"],
-];
+const glyphs: Record<string, string> = {
+  "‡":"א", "·":"ב", "‚":"ג", "„":"ד", "‰":"ה", "Â":"ו", "Ê":"ז", "Á":"ח", "Ë":"ט", "È":"י",
+  "Î":"כ", "Í":"ך", "Ï":"ל", "Ó":"מ", "Ì":"ם", "\u0014":"נ", "Ô":"ן", "Ò":"ס", "Ú":"ע", "Ù":"פ",
+  "Û":"ף", "ˆ":"צ", "ı":"ץ", "˜":"ק", "¯":"ר", "˘":"ש", "˙":"ת",
+};
+const decodeWord = (raw: string) => Array.from(raw).map((char) => glyphs[char] ?? char).reverse().join("").replace("'", "׳");
 
 export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: {
   zoom: number; selectedBlock: string; onSelect: (blockId: string, word: string) => void; onBlockLocated: () => void;
@@ -65,19 +60,19 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
         if (start < 1) throw new Error("Не найден проверенный текстовый блок на листе");
         const [a, b, c, d, e, f] = viewport.transform;
         const toViewport = (x: number, y: number) => ({ x: a * x + c * y + e, y: b * x + d * y + f });
-        const locate = (targetItems: typeof items, labels: string[][]): LocatedBlock => {
+        const locate = (parts: Array<{ item: typeof items[number]; take?: number[] }>): LocatedBlock => {
           const baselines: number[] = [];
-          const words = targetItems.flatMap((item, itemIndex) => {
+          const words = parts.flatMap(({ item, take }) => {
             let line = baselines.findIndex((baseline) => Math.abs(baseline - item.transform[5]) < 2);
             if (line < 0) { baselines.push(item.transform[5]); line = baselines.length - 1; }
             const p1 = toViewport(item.transform[4], item.transform[5]);
             const p2 = toViewport(item.transform[4] + item.width, item.transform[5] + item.height);
             const left = Math.min(p1.x, p2.x), top = Math.min(p1.y, p2.y), width = Math.abs(p2.x - p1.x), height = Math.abs(p2.y - p1.y);
-            return Array.from(item.str.matchAll(/\S+/g)).map((match, wordIndex) => ({
+            return Array.from(item.str.matchAll(/\S+/g)).flatMap((match, wordIndex) => !take || take.includes(wordIndex) ? [{
               left: left + width * ((match.index ?? 0) / item.str.length), top,
               width: Math.max(2, width * (match[0].length / item.str.length)), height,
-              word: labels[itemIndex]?.[wordIndex] ?? "слово", line,
-            }));
+              word: decodeWord(match[0]), line,
+            }] : []);
           });
           const lines = Array.from(new Set(words.map((word) => word.line))).map((line) => {
             const row = words.filter((word) => word.line === line);
@@ -88,10 +83,19 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
           });
           return { lines, words };
         };
-        const firstItems = items.slice(start - 1, start + 4);
-        const secondItems = [items[start + 6], items[start + 8], items[start + 10], items[start + 12], items[start + 13]];
-        if (secondItems.some((item) => !item)) throw new Error("Не удалось построить карту блоков");
-        const locatedBlocks = { "2a:2-3": locate(firstItems, firstBlockWords), "2a:4": locate(secondItems, secondBlockWords) };
+        const part = (offset: number, take?: number[]) => ({ item: items[start + offset], take });
+        const locatedBlocks = {
+          "2a:2-3": locate([-1, 0, 1, 2, 3].map((offset) => part(offset))),
+          "2a:4": locate([6, 8, 10, 12, 13].map((offset) => part(offset))),
+          "2a:5": locate([part(14), part(15, [5, 6, 7])]),
+          "2a:6": locate([part(15, [0, 1, 2, 3, 4]), part(16), part(17), part(18)]),
+          "2a:7": locate([part(20), part(21), part(23)]),
+          "2a:8": locate([part(24), part(25), part(26), part(27, [1, 2, 3, 4, 5, 6, 7])]),
+          "2a:9": locate([part(27, [0]), part(28)]),
+          "2a:10": locate([part(29), part(30)]),
+          "2a:11": locate([part(31), part(32, [5, 6])]),
+          "2a:12": locate([part(32, [0, 1, 2, 3, 4]), part(33), part(34), part(35), part(37), part(38)]),
+        };
         if (cancelled || !canvasRef.current) return;
         const canvas = canvasRef.current;
         const ratio = Math.min(window.devicePixelRatio || 1, 2);
