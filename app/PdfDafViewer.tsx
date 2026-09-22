@@ -152,6 +152,30 @@ function alignDiburimToPdf(pdfWords: WordRect[], comments: CommentaryLink[]) {
   return blocks;
 }
 
+function locateDiburInGemara(words: WordRect[], dibur: string) {
+  const source = editionWords(dibur).filter((word) => !["גמ", "מתני"].includes(word));
+  const target = words.map((word) => normalizeHebrew(word.word));
+  let cursor = 0;
+  const matchedIndexes: number[] = [];
+  source.forEach((sourceWord) => {
+    for (let index = cursor; index < target.length; index++) {
+      if (target[index] === sourceWord || target[index].endsWith(sourceWord) || sourceWord.endsWith(target[index])) {
+        matchedIndexes.push(index); cursor = index + 1; break;
+      }
+    }
+  });
+  if (!matchedIndexes.length || matchedIndexes.length / source.length < .5) return null;
+  const locatedWords = words.slice(matchedIndexes[0], matchedIndexes.at(-1)! + 1);
+  const lines = Array.from(new Set(locatedWords.map((word) => word.line))).map((line) => {
+    const row = locatedWords.filter((word) => word.line === line);
+    const left = Math.min(...row.map((word) => word.left)), right = Math.max(...row.map((word) => word.left + word.width));
+    const top = Math.min(...row.map((word) => word.top)), bottom = Math.max(...row.map((word) => word.top + word.height));
+    const fullHeight = bottom - top;
+    return { left, top: top + fullHeight * .48, width: right - left, height: fullHeight * .46 };
+  });
+  return { words: locatedWords, lines };
+}
+
 export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: {
   zoom: number; selectedBlock: string; onSelect: (blockId: string, word: string) => void; onBlockLocated: () => void;
 }) {
@@ -163,6 +187,8 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
   const [blocks, setBlocks] = useState<Record<string, LocatedBlock>>({});
   const [commentaryBlocks, setCommentaryBlocks] = useState<Record<string, LocatedBlock>>({});
   const [hoveredBlock, setHoveredBlock] = useState<string | null>(null);
+  const [hoveredComment, setHoveredComment] = useState<string | null>(null);
+  const [pinnedComment, setPinnedComment] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -194,12 +220,12 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
             return Array.from(item.str.matchAll(/\S+/g)).map((match) => ({
               left: left + width * ((match.index ?? 0) / item.str.length), top,
               width: Math.max(2, width * (match[0].length / item.str.length)), height,
-              word: decodeWord(match[0]), line: Math.round(item.transform[5] / 2),
+              word: decodeWord(match[0]), line: Math.round(item.transform[5] / 5),
             }));
           })
           .filter((word) => normalizeHebrew(word.word))
           .sort((first, second) => second.line - first.line || second.left - first.left);
-        const pdfWords = makeWords((item) => item.transform[4] >= 218 && item.transform[4] <= 395 && item.transform[5] > 600 && item.transform[5] < 1080);
+        const pdfWords = makeWords((item) => item.transform[4] >= 204 && item.transform[4] <= 405 && item.transform[5] > 600 && item.transform[5] < 1080);
         const rashiWords = makeWords((item) => item.transform[4] > 400 && item.transform[5] > 120 && item.transform[5] < 1080);
         const tosafotWords = makeWords((item) => item.transform[4] < 212 && item.transform[5] > 120 && item.transform[5] < 1080);
         const locatedBlocks = alignSefariaToPdf(pdfWords);
@@ -232,14 +258,19 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
   const selected = blocks[selectedBlock];
   const preview = hoveredBlock && hoveredBlock !== selectedBlock ? blocks[hoveredBlock] : null;
   const linkedComments = BEKHOROT_2A_COMMENTARY.filter((comment) => comment.base === selectedBlock);
+  const activeComment = hoveredComment ?? pinnedComment;
+  const activeCommentary = linkedComments.find((comment) => comment.ref === activeComment);
+  const gemaraCue = activeCommentary && selected ? locateDiburInGemara(selected.words, activeCommentary.dibur) : null;
   return <div className="pdfStage" style={{ width: size.width, height: size.height }}>
     <canvas ref={canvasRef} aria-label="Оригинальный PDF, Бехорот 2а" />
     {status === "loading" && <div className="pdfStatus">Загружаем оригинальный PDF…</div>}
     {status === "error" && <div className="pdfStatus error">Не удалось открыть PDF.<small>{errorMessage}</small><a href="/bekhorot-2a.pdf">Открыть оригинал</a></div>}
-    {status === "ready" && <div className="pdfInteraction" aria-label="Интерактивный слой текста Гемары">
+    {status === "ready" && <div className="pdfInteraction" aria-label="Интерактивный слой оригинального листа" data-active-comment={activeComment ?? ""} data-gemara-cue={gemaraCue ? "yes" : "no"}>
       {selected?.lines.map((rect, index) => <span key={`selected-${index}`} className="textHighlight selectedHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
       {preview?.lines.map((rect, index) => <span key={`preview-${index}`} className="textHighlight hoverHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
       {linkedComments.flatMap((comment) => (commentaryBlocks[comment.ref]?.lines ?? []).map((rect, index) => <span key={`${comment.ref}-${index}`} className={`textHighlight commentaryHighlight ${comment.commentator === "Rashi" ? "rashiPdfHighlight" : "tosafotPdfHighlight"}`} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />))}
+      {gemaraCue?.lines.map((rect, index) => <span key={`gemara-cue-${index}`} className="textHighlight gemaraCueHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
+      {linkedComments.flatMap((comment) => (commentaryBlocks[comment.ref]?.words ?? []).map((rect, index) => <button key={`comment-hit-${comment.ref}-${index}`} className="commentaryHit" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} onPointerEnter={() => setHoveredComment(comment.ref)} onPointerLeave={() => setHoveredComment(null)} onFocus={() => setHoveredComment(comment.ref)} onBlur={() => setHoveredComment(null)} onClick={() => setPinnedComment((current) => current === comment.ref ? null : comment.ref)} aria-label={`${comment.commentator === "Rashi" ? "Раши" : "Тосафот"}: ${comment.dibur}; показать место в Гемаре`} />))}
       {Object.entries(blocks).flatMap(([blockId, block]) => block.words.map((rect, index) => <button key={`${blockId}-${index}`} className="wordHit" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} onPointerEnter={() => setHoveredBlock(blockId)} onPointerLeave={() => setHoveredBlock(null)} onFocus={() => setHoveredBlock(blockId)} onBlur={() => setHoveredBlock(null)} onClick={() => blockId !== selectedBlock && onSelect(blockId, rect.word)} aria-label={`Слово ${rect.word}; реплика Бехорот ${blockId}`} />))}
     </div>}
   </div>;
