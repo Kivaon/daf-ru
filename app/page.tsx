@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { PdfDafViewer } from "./PdfDafViewer";
 import { BEKHOROT_2A_SEGMENTS } from "./bekhorot2a";
+import { BEKHOROT_2A_COMMENTARY } from "./bekhorot2aCommentary";
 
 export default function Home() {
   const [bounds, setBounds] = useState<[number, number]>([2, 2]);
@@ -44,6 +45,9 @@ export default function Home() {
     setPicked(null);
   };
   const selectedSegment = BEKHOROT_2A_SEGMENTS.find((segment) => segment.id === selectedBlock);
+  const linkedComments = BEKHOROT_2A_COMMENTARY.filter((comment) => comment.base === selectedBlock);
+  const linkedRashi = linkedComments.filter((comment) => comment.commentator === "Rashi");
+  const linkedTosafot = linkedComments.filter((comment) => comment.commentator === "Tosafot");
 
   return <main>
     <header className="topbar">
@@ -55,9 +59,17 @@ export default function Home() {
     <section className="workspace">
       <aside className="sourcePane dafPane">
         <div className="paneHeading"><div><span className="eyebrow">ОРИГИНАЛЬНЫЙ ЛИСТ</span><h1>Бехорот <b>2а</b></h1></div><span className="verified">Оригинальный PDF</span></div>
+        <nav className="dafNavigation" aria-label="Навигация по Талмуду">
+          <button disabled aria-label="Предыдущая страница">←</button>
+          <label><span>Трактат</span><select value="Bekhorot" aria-label="Трактат" onChange={() => {}}><option value="Bekhorot">Бехорот</option></select></label>
+          <label><span>Лист</span><select value="2" aria-label="Лист" onChange={() => {}}><option value="2">2</option></select></label>
+          <label><span>Сторона</span><select value="a" aria-label="Сторона" onChange={() => {}}><option value="a">а</option></select></label>
+          <button disabled aria-label="Следующая страница">→</button>
+          <small>В корпусе прототипа пока один оригинальный лист</small>
+        </nav>
         <div className="dafToolbar"><div><span className="currentKey"><i /> Выбранный блок</span><span className="hint">Нажмите на слово Гемары</span></div><div className="zoomControls"><button onClick={() => setZoom(value => Math.max(.6, value - .15))} aria-label="Уменьшить">−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(value => Math.min(1.8, value + .15))} aria-label="Увеличить">+</button></div></div>
         <div className="dafViewport"><PdfDafViewer zoom={zoom} selectedBlock={selectedBlock} onSelect={selectPdfWord} onBlockLocated={locateBlock} /></div>
-        <div className="pageGuide"><span><b>Центр</b> Мишна и Гемара</span><span><b>Интерактивно</b> Пока только Гемара</span><span><b>Источник</b> HebrewBooks</span><a href="/bekhorot-2a.pdf" target="_blank" rel="noreferrer">Открыть оригинальный PDF ↗</a></div>
+        <div className="pageGuide"><span><b>Золото</b> Выбранная реплика</span><span><b>Зелёный</b> Раши</span><span><b>Терракота</b> Тосафот</span><a href="/bekhorot-2a.pdf" target="_blank" rel="noreferrer">Открыть оригинальный PDF ↗</a></div>
       </aside>
 
       <article className="studyPane" onMouseUp={captureSelection}>
@@ -74,6 +86,9 @@ export default function Home() {
         <div className="rashiHeading"><span>Раши к этому блоку</span><i>2</i></div>
         <section className="analysisCard rashiCard"><div className="rashiNumber">1</div><div className="hebrew" lang="he" dir="rtl">מייתי לה לקדושה — שתהא שובתת בשבת וכיון דמצוה עביד ליכא למיקנסיה</div><h3>Точный перевод</h3><p>«Приводит её к святости» — чтобы она отдыхала в Шаббат; а поскольку он совершает заповедь, нет оснований штрафовать его.</p><div className="explanation compact"><span>Смысл</span><p>Покупка животного у нееврея вводит его в режим еврейских обязанностей, включая покой в Шаббат.</p></div></section>
         <section className="analysisCard rashiCard"><div className="rashiNumber">2</div><div className="hebrew" lang="he" dir="rtl">אימא ליקנסיה — לפדות העובר מן העובד כוכבים וליתנו לכהן</div><h3>Точный перевод</h3><p>«Можно было бы сказать: оштрафуем его» — [обязав] выкупить зародыш у нееврея и отдать его коэну.</p><div className="explanation compact"><span>Смысл</span><p>Предполагаемый штраф возвращает первенца в сферу заповеди: продавец должен был бы выкупить его обратно и передать коэну.</p></div></section></> : <section className="analysisCard gemaraCard"><div className="cardTitle"><span>•</span><div><small>{selectedSegment?.kind.toUpperCase() ?? "ТЕКСТ"} · РЕПЛИКА {selectedBlock.replace("2a", "2а")}</small><h2>Разбор пока не сохранён</h2></div></div>{selectedSegment && <div className="hebrew" lang="he" dir="rtl">{selectedSegment.text}</div>}<div className="explanation"><span>Источник</span><p>Показан проверенный оригинал реплики из Sefaria. Перевод и объяснение для неё пока не сохранены.</p></div></section>}
+        {linkedTosafot.length > 0 && <><div className="commentaryHeading tosafotHeading"><span>Тосафот к этой реплике</span><i>{linkedTosafot.length}</i></div>{linkedTosafot.map((comment) => <section className="analysisCard sourceCommentCard tosafotCard" key={comment.ref}><div className="commentMeta"><b>ТОСАФОТ</b><span>{comment.ref.replace("Tosafot on Bekhorot ", "Бехорот ")}</span></div><div className="hebrew" lang="he" dir="rtl"><strong>{comment.dibur}</strong>{comment.text.slice(comment.dibur.length)}</div><p className="sourceOnly">Оригинал из Sefaria. Перевод и объяснение пока не сохранены.</p></section>)}</>}
+        {selectedBlock !== "2a:3" && linkedRashi.length > 0 && <><div className="commentaryHeading"><span>Раши к этой реплике</span><i>{linkedRashi.length}</i></div>{linkedRashi.map((comment) => <section className="analysisCard sourceCommentCard rashiSourceCard" key={comment.ref}><div className="commentMeta"><b>РАШИ</b><span>{comment.ref.replace("Rashi on Bekhorot ", "Бехорот ")}</span></div><div className="hebrew" lang="he" dir="rtl"><strong>{comment.dibur}</strong>{comment.text.slice(comment.dibur.length)}</div><p className="sourceOnly">Оригинал из Sefaria. Перевод и объяснение пока не сохранены.</p></section>)}</>}
+        {linkedComments.length === 0 && <div className="noCommentary">Sefaria не связывает с этой репликой ни одного комментария Раши или Тосафот.</div>}
         </>}
       </article>
     </section>

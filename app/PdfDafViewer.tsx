@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { BEKHOROT_2A_SEGMENTS } from "./bekhorot2a";
+import { BEKHOROT_2A_COMMENTARY, CommentaryLink } from "./bekhorot2aCommentary";
 
 type TextRect = { left: number; top: number; width: number; height: number };
 type WordRect = TextRect & { word: string; line: number };
@@ -99,6 +100,58 @@ function alignSefariaToPdf(pdfWords: WordRect[]) {
   return blocks;
 }
 
+function alignDiburimToPdf(pdfWords: WordRect[], comments: CommentaryLink[]) {
+  if (!comments.length || !pdfWords.length) return {} as Record<string, LocatedBlock>;
+  const sourceChars: Array<{ char: string; comment: number }> = [];
+  comments.forEach((comment, commentIndex) => editionWords(comment.dibur).forEach((word) =>
+    Array.from(word).forEach((char) => sourceChars.push({ char, comment: commentIndex }))));
+  const pdfChars: Array<{ char: string; word: number }> = [];
+  pdfWords.forEach((word, wordIndex) => Array.from(normalizeHebrew(word.word)).forEach((char) => pdfChars.push({ char, word: wordIndex })));
+  const m = sourceChars.length, n = pdfChars.length, width = n + 1;
+  const costs = new Uint16Array((m + 1) * width);
+  const path = new Uint8Array((m + 1) * width);
+  for (let i = 1; i <= m; i++) { costs[i * width] = i; path[i * width] = 1; }
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+    const index = i * width + j;
+    const diagonal = costs[(i - 1) * width + j - 1] + (sourceChars[i - 1].char === pdfChars[j - 1].char ? 0 : 2);
+    const deletion = costs[(i - 1) * width + j] + 1;
+    const insertion = costs[index - 1] + 1;
+    if (diagonal <= deletion && diagonal <= insertion) { costs[index] = diagonal; path[index] = 0; }
+    else if (deletion <= insertion) { costs[index] = deletion; path[index] = 1; }
+    else { costs[index] = insertion; path[index] = 2; }
+  }
+  let end = 0;
+  for (let j = 1; j <= n; j++) if (costs[m * width + j] < costs[m * width + end]) end = j;
+  const matchedWords = comments.map(() => new Set<number>()), exact = comments.map(() => 0), totals = comments.map(() => 0);
+  sourceChars.forEach(({ comment }) => totals[comment]++);
+  let i = m, j = end;
+  while (i > 0) {
+    const direction = path[i * width + j];
+    if (direction === 0 && j > 0) {
+      const source = sourceChars[i - 1], pdf = pdfChars[j - 1];
+      matchedWords[source.comment].add(pdf.word);
+      if (source.char === pdf.char) exact[source.comment]++;
+      i--; j--;
+    } else if (direction === 1 || j === 0) i--;
+    else j--;
+  }
+  const blocks: Record<string, LocatedBlock> = {};
+  comments.forEach((comment, index) => {
+    const matched = [...matchedWords[index]].sort((a, b) => a - b);
+    if (!matched.length || exact[index] / totals[index] < .58) return;
+    const words = pdfWords.slice(matched[0], matched.at(-1)! + 1);
+    const lines = Array.from(new Set(words.map((word) => word.line))).map((line) => {
+      const row = words.filter((word) => word.line === line);
+      const left = Math.min(...row.map((word) => word.left)), right = Math.max(...row.map((word) => word.left + word.width));
+      const top = Math.min(...row.map((word) => word.top)), bottom = Math.max(...row.map((word) => word.top + word.height));
+      const fullHeight = bottom - top;
+      return { left, top: top + fullHeight * .48, width: right - left, height: fullHeight * .46 };
+    });
+    blocks[comment.ref] = { words, lines };
+  });
+  return blocks;
+}
+
 export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: {
   zoom: number; selectedBlock: string; onSelect: (blockId: string, word: string) => void; onBlockLocated: () => void;
 }) {
@@ -108,6 +161,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [blocks, setBlocks] = useState<Record<string, LocatedBlock>>({});
+  const [commentaryBlocks, setCommentaryBlocks] = useState<Record<string, LocatedBlock>>({});
   const [hoveredBlock, setHoveredBlock] = useState<string | null>(null);
 
   useEffect(() => {
@@ -131,8 +185,8 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
         const items = textContent.items.filter((item): item is typeof item & { str: string; transform: number[]; width: number; height: number } => "str" in item);
         const [a, b, c, d, e, f] = viewport.transform;
         const toViewport = (x: number, y: number) => ({ x: a * x + c * y + e, y: b * x + d * y + f });
-        const pdfWords = items
-          .filter((item) => item.transform[4] >= 218 && item.transform[4] <= 395 && item.transform[5] > 600 && item.transform[5] < 1080)
+        const makeWords = (filter: (item: typeof items[number]) => boolean) => items
+          .filter(filter)
           .flatMap((item) => {
             const p1 = toViewport(item.transform[4], item.transform[5]);
             const p2 = toViewport(item.transform[4] + item.width, item.transform[5] + item.height);
@@ -145,13 +199,20 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
           })
           .filter((word) => normalizeHebrew(word.word))
           .sort((first, second) => second.line - first.line || second.left - first.left);
+        const pdfWords = makeWords((item) => item.transform[4] >= 218 && item.transform[4] <= 395 && item.transform[5] > 600 && item.transform[5] < 1080);
+        const rashiWords = makeWords((item) => item.transform[4] > 400 && item.transform[5] > 120 && item.transform[5] < 1080);
+        const tosafotWords = makeWords((item) => item.transform[4] < 212 && item.transform[5] > 120 && item.transform[5] < 1080);
         const locatedBlocks = alignSefariaToPdf(pdfWords);
+        const locatedCommentary = {
+          ...alignDiburimToPdf(rashiWords, BEKHOROT_2A_COMMENTARY.filter((comment) => comment.commentator === "Rashi")),
+          ...alignDiburimToPdf(tosafotWords, BEKHOROT_2A_COMMENTARY.filter((comment) => comment.commentator === "Tosafot")),
+        };
         if (cancelled || !canvasRef.current) return;
         const canvas = canvasRef.current;
         const ratio = Math.min(window.devicePixelRatio || 1, 2);
         canvas.width = Math.floor(viewport.width * ratio); canvas.height = Math.floor(viewport.height * ratio);
         canvas.style.width = `${viewport.width}px`; canvas.style.height = `${viewport.height}px`;
-        setSize({ width: viewport.width, height: viewport.height }); setBlocks(locatedBlocks);
+        setSize({ width: viewport.width, height: viewport.height }); setBlocks(locatedBlocks); setCommentaryBlocks(locatedCommentary);
         renderTaskRef.current?.cancel();
         const context = canvas.getContext("2d", { alpha: false });
         if (!context) throw new Error("Canvas unavailable");
@@ -170,6 +231,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
 
   const selected = blocks[selectedBlock];
   const preview = hoveredBlock && hoveredBlock !== selectedBlock ? blocks[hoveredBlock] : null;
+  const linkedComments = BEKHOROT_2A_COMMENTARY.filter((comment) => comment.base === selectedBlock);
   return <div className="pdfStage" style={{ width: size.width, height: size.height }}>
     <canvas ref={canvasRef} aria-label="Оригинальный PDF, Бехорот 2а" />
     {status === "loading" && <div className="pdfStatus">Загружаем оригинальный PDF…</div>}
@@ -177,6 +239,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated }: 
     {status === "ready" && <div className="pdfInteraction" aria-label="Интерактивный слой текста Гемары">
       {selected?.lines.map((rect, index) => <span key={`selected-${index}`} className="textHighlight selectedHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
       {preview?.lines.map((rect, index) => <span key={`preview-${index}`} className="textHighlight hoverHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
+      {linkedComments.flatMap((comment) => (commentaryBlocks[comment.ref]?.lines ?? []).map((rect, index) => <span key={`${comment.ref}-${index}`} className={`textHighlight commentaryHighlight ${comment.commentator === "Rashi" ? "rashiPdfHighlight" : "tosafotPdfHighlight"}`} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />))}
       {Object.entries(blocks).flatMap(([blockId, block]) => block.words.map((rect, index) => <button key={`${blockId}-${index}`} className="wordHit" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} onPointerEnter={() => setHoveredBlock(blockId)} onPointerLeave={() => setHoveredBlock(null)} onFocus={() => setHoveredBlock(blockId)} onBlur={() => setHoveredBlock(null)} onClick={() => blockId !== selectedBlock && onSelect(blockId, rect.word)} aria-label={`Слово ${rect.word}; реплика Бехорот ${blockId}`} />))}
     </div>}
   </div>;
