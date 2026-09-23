@@ -354,14 +354,15 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
         });
         const gemaraFont = [...gemaraFontScores].sort((first, second) => second[1] - first[1])[0]?.[0];
         if (!gemaraFont) throw new Error("PDF не содержит распознаваемого слоя текста Гемары");
-        const pdfWords = makeWords((item) => {
-          if(item.transform[5]<=120||item.transform[5]>=1080)return false;
-          if(item.fontName===gemaraFont)return true;
-          // A Vilna line may switch to another embedded subset/font even though
-          // it continues the Gemara. Admit substantial type from the central
-          // column; Sefaria sequence alignment still decides whether it belongs.
-          return item.transform[4]>140&&item.transform[4]<475&&item.height>=11.5;
-        });
+        const primaryWords=makeWords((item)=>item.fontName===gemaraFont&&item.transform[5]>120&&item.transform[5]<1080);
+        // RTL text runs can have an origin outside the place where their glyphs
+        // are painted. Filter alternate font subsets by each rendered word box,
+        // not by the text item's origin, then let Sefaria alignment validate them.
+        const alternateWords=makeWords((item)=>item.fontName!==gemaraFont&&item.transform[5]>120&&item.transform[5]<1080&&item.height>=11.5)
+          .filter((word)=>word.left/zoom>175&&(word.left+word.width)/zoom<435);
+        const pdfWords=[...primaryWords,...alternateWords]
+          .filter((word,index,array)=>array.findIndex((other)=>other.left===word.left&&other.top===word.top&&other.word===word.word)===index)
+          .sort((first,second)=>second.line-first.line||second.left-first.left);
         const openingCandidates = makeWords((item) => item.transform[4] > 55 && item.transform[4] < 550 && item.transform[5] > 120 && item.transform[5] < 1080 && item.height >= 10.5);
         const rashiWords = makeWords((item) => item.transform[4] > 400 && item.transform[5] > 120 && item.transform[5] < 1080);
         const tosafotWords = makeWords((item) => item.transform[4] < 212 && item.transform[5] > 120 && item.transform[5] < 1080);
