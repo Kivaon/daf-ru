@@ -107,7 +107,10 @@ function matchBoundaryWords(sourceText: string, candidates: WordRect[], offset: 
       exactCharacters += Math.min(source[i - 1].length, target[j - 1].length);
       i--; j--;
     }
-    else if (lengths[(i - 1) * width + j] >= lengths[i * width + j - 1]) i--;
+    // On a page boundary the same cue word can occur again later in the
+    // segment. In an LCS tie, discard the later PDF candidate so the first
+    // physical occurrence on the daf wins instead of the repeated one.
+    else if (lengths[(i - 1) * width + j] > lengths[i * width + j - 1]) i--;
     else j--;
   }
   return { matched: matched.reverse(), exactCharacters };
