@@ -65,6 +65,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
   const [editorMessage, setEditorMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [landingEdge, setLandingEdge] = useState<"start"|"end">("start");
 
   const tractate = useMemo(() => tractateBySefaria(tractateTitle), [tractateTitle]);
   const pageKey = `${daf}${side}`;
@@ -120,19 +121,19 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
         }
         if (controller.signal.aborted) return;
         setSegments(nextSegments); setComments(nextComments);
-        const preferred = tractate.sefaria === "Bekhorot" && pageKey === "2a" ? "2a:3" : nextSegments[0].id;
-        setSelectedBlock(nextSegments.some((item) => item.id === preferred) ? preferred : nextSegments[0].id);
+        const preferred = landingEdge === "end" ? nextSegments.at(-1)!.id : nextSegments[0].id;
+        setSelectedBlock(preferred);
         setStatus("ready");
       } catch (reason) {
         if (!controller.signal.aborted) { setStatus("error"); setError(reason instanceof Error ? reason.message : String(reason)); }
       }
     })();
     return () => controller.abort();
-  }, [restored, tractate, pageKey]);
+  }, [restored, tractate, pageKey, landingEdge]);
 
   const move = (direction:-1|1) => {
-    if (direction < 0) { if (isFirst) return; if (side === "b") setSide("a"); else { setDaf((value) => value - 1); setSide("b"); } }
-    else { if (isLast) return; if (side === "a") setSide("b"); else { setDaf((value) => value + 1); setSide("a"); } }
+    if (direction < 0) { if (isFirst) return; setLandingEdge("end"); if (side === "b") setSide("a"); else { setDaf((value) => value - 1); setSide("b"); } }
+    else { if (isLast) return; setLandingEdge("start"); if (side === "a") setSide("b"); else { setDaf((value) => value + 1); setSide("a"); } }
   };
   const selectWord = useCallback((blockId:string, word:string) => { setPicked(null); setSelectedBlock(blockId); setSelectedWord(word); }, []);
   const located = useCallback((locatedBlock?:string) => { if(locatedBlock)setSelectedBlock(locatedBlock); setBlockLocated(true); }, []);
@@ -145,7 +146,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
   const pageOptions = Array.from({length:tractate.lastDaf-1},(_,i)=>i+2).flatMap((number) => ["a","b"].filter((amud) => !(number===tractate.lastDaf&&tractate.lastSide==="a"&&amud==="b")).map((amud) => `${number}${amud}`));
   const nearbyStart = Math.max(2, Math.min(daf <= 3 ? 2 : daf - 1, Math.max(2, tractate.lastDaf - 2)));
   const nearbyPages = [nearbyStart,nearbyStart+1,nearbyStart+2].filter((number)=>number<=tractate.lastDaf).flatMap((number)=>["a","b"].filter((amud)=>!(number===tractate.lastDaf&&tractate.lastSide==="a"&&amud==="b")).map((amud)=>`${number}${amud}`));
-  const choosePage = (value:string) => { setDaf(Number(value.slice(0,-1))); setSide(value.endsWith("b")?"b":"a"); };
+  const choosePage = (value:string) => { setLandingEdge("start"); setDaf(Number(value.slice(0,-1))); setSide(value.endsWith("b")?"b":"a"); };
 
   const captureSelection = () => { const selection=window.getSelection(), text=selection?.toString().trim() || ""; if(selection && !selection.isCollapsed && text && text.length<80 && /[\u0590-\u05FF]/.test(text)){ const rect=selection.rangeCount?selection.getRangeAt(0).getBoundingClientRect():null; setPicked({text,x:Math.min(window.innerWidth-170,rect?.left||40),y:(rect?.bottom||90)+8}); } else setPicked(null); };
   const saveWord = () => { if(!picked)return; const next=words.includes(picked.text)?words:[picked.text,...words]; setWords(next); localStorage.setItem("havruta-dictionary",JSON.stringify(next)); setPicked(null); };
@@ -234,8 +235,8 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
   return <main>
     <header className="topbar"><div className="brand"><span className="brandMark">דף</span><span>Daf-Ru</span></div><div className="progress"><span>{tractate.ru}</span><strong>{daf}{side === "a" ? "а" : "б"}</strong><span className="status"><i/> Позиция сохранена</span></div><div className="account"><span title={user.email}>{user.name}</span><button className="iconButton" onClick={()=>setDictionaryOpen(true)} aria-label="Открыть словарь">⌘ <span>Словарь</span>{words.length>0&&<b>{words.length}</b>}</button></div></header>
     <section className="workspace"><aside className="sourcePane dafPane" onPointerDown={()=>setPicked(null)}>
-      <nav className="dafNavigation compactNavigation" aria-label="Навигация по Талмуду"><button disabled={isFirst} onClick={()=>move(-1)} aria-label="Предыдущая страница">←</button><label><select value={tractateTitle} aria-label="Трактат" onChange={(e)=>{setTractateTitle(e.target.value);setDaf(2);setSide("a");}}>{TRACTATES.map((item)=><option key={item.sefaria} value={item.sefaria}>{item.ru}</option>)}</select></label><label><select value={pageKey} aria-label="Страница" onChange={(e)=>choosePage(e.target.value)}>{pageOptions.map((value)=><option key={value} value={value}>{value.replace("a","а").replace("b","б")}</option>)}</select></label><button disabled={isLast} onClick={()=>move(1)} aria-label="Следующая страница">→</button><div className="zoomControls"><button onClick={()=>setZoom(v=>Math.max(.6,v-.15))} aria-label="Уменьшить">−</button><span>{Math.round(zoom*100)}%</span><button onClick={()=>setZoom(v=>Math.min(1.8,v+.15))} aria-label="Увеличить">+</button></div></nav>
-      <div className="dafViewport">{status==="ready"?<PdfDafViewer zoom={zoom} selectedBlock={selectedBlock} onSelect={selectWord} onBlockLocated={located} pdfUrl={pdfUrl} label={label} segments={segments} commentary={comments}/>:<div className={`pageDataStatus ${status}`}>{status==="loading"?"Получаем лист и текст…":<><b>Не удалось загрузить лист</b><small>{error}</small></>}</div>}</div>
+      <nav className="dafNavigation compactNavigation" aria-label="Навигация по Талмуду"><button disabled={isFirst} onClick={()=>move(-1)} aria-label="Предыдущая страница">←</button><label><select value={tractateTitle} aria-label="Трактат" onChange={(e)=>{setLandingEdge("start");setTractateTitle(e.target.value);setDaf(2);setSide("a");}}>{TRACTATES.map((item)=><option key={item.sefaria} value={item.sefaria}>{item.ru}</option>)}</select></label><label><select value={pageKey} aria-label="Страница" onChange={(e)=>choosePage(e.target.value)}>{pageOptions.map((value)=><option key={value} value={value}>{value.replace("a","а").replace("b","б")}</option>)}</select></label><button disabled={isLast} onClick={()=>move(1)} aria-label="Следующая страница">→</button><div className="zoomControls"><button onClick={()=>setZoom(v=>Math.max(.6,v-.15))} aria-label="Уменьшить">−</button><span>{Math.round(zoom*100)}%</span><button onClick={()=>setZoom(v=>Math.min(1.8,v+.15))} aria-label="Увеличить">+</button></div></nav>
+      <div className="dafViewport">{status==="ready"?<PdfDafViewer zoom={zoom} selectedBlock={selectedBlock} landingEdge={landingEdge} onSelect={selectWord} onBlockLocated={located} pdfUrl={pdfUrl} label={label} segments={segments} commentary={comments}/>:<div className={`pageDataStatus ${status}`}>{status==="loading"?"Получаем лист и текст…":<><b>Не удалось загрузить лист</b><small>{error}</small></>}</div>}</div>
       <div className="pageGuide compactGuide"><span>Лист: Shas.org / HebrewBooks · текст и связи: Sefaria</span></div>
     </aside><article className="studyPane" onMouseUp={captureSelection}>
       <div className="studyNavigation"><div><span>{tractate.ru}</span><b>{daf}{side==="a"?"а":"б"}</b></div><nav aria-label="Соседние страницы">{nearbyPages.map((value)=><button key={value} className={value===pageKey?"active":""} disabled={value===pageKey} onClick={()=>choosePage(value)}>{value.replace("a","а").replace("b","б")}</button>)}</nav></div>

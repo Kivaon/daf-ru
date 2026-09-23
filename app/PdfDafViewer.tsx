@@ -296,8 +296,9 @@ function locateDiburInGemara(words: WordRect[], dibur: string) {
   return { words: locatedWords, lines };
 }
 
-export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pdfUrl = "/bekhorot-2a.pdf", label = "Бехорот 2а", segments = [], commentary = [] }: {
+export function PdfDafViewer({ zoom, selectedBlock, landingEdge = "start", onSelect, onBlockLocated, pdfUrl = "/bekhorot-2a.pdf", label = "Бехорот 2а", segments = [], commentary = [] }: {
   zoom: number; selectedBlock: string; onSelect: (blockId: string, word: string) => void; onBlockLocated: (blockId?: string) => void;
+  landingEdge?: "start"|"end";
   pdfUrl?: string; label?: string; segments?: DafSegment[]; commentary?: CommentaryLink[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -384,7 +385,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
         if (!context) throw new Error("Canvas unavailable");
         const task = page.render({ canvas, canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0] });
         renderTaskRef.current = task; await task.promise;
-        if (!cancelled) { setStatus("ready"); setAlignmentWarning(mappingError || mappingNotice); if (!mappingError) onBlockLocated(locatedBlocks[selectedBlock] ? selectedBlock : Object.keys(locatedBlocks)[0]); }
+        if (!cancelled) { setStatus("ready"); setAlignmentWarning(mappingError || mappingNotice); if (!mappingError) { const available=Object.keys(locatedBlocks); onBlockLocated(locatedBlocks[selectedBlock] ? selectedBlock : (landingEdge==="end" ? available.at(-1) : available[0])); } }
       } catch (error) {
         if (!cancelled && (error as { name?: string }).name !== "RenderingCancelledException") {
           console.error("PDF rendering failed", error); setErrorMessage(error instanceof Error ? error.message : String(error)); setStatus("error");
@@ -393,7 +394,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
     }
     renderPdf();
     return () => { cancelled = true; renderTaskRef.current?.cancel(); };
-  }, [zoom, onBlockLocated, pdfUrl, segments, commentary]);
+  }, [zoom, onBlockLocated, pdfUrl, segments, commentary, landingEdge]);
 
   const selected = blocks[selectedBlock];
   const preview = hoveredBlock && hoveredBlock !== selectedBlock ? blocks[hoveredBlock] : null;
