@@ -206,46 +206,26 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
 
 function alignDiburimToPdf(pdfWords: WordRect[], comments: CommentaryLink[]) {
   if (!comments.length || !pdfWords.length) return {} as Record<string, LocatedBlock>;
-  const sourceChars: Array<{ char: string; comment: number }> = [];
-  comments.forEach((comment, commentIndex) => editionWords(comment.dibur).forEach((word) =>
-    Array.from(word).forEach((char) => sourceChars.push({ char, comment: commentIndex }))));
-  const pdfChars: Array<{ char: string; word: number }> = [];
-  pdfWords.forEach((word, wordIndex) => Array.from(normalizeHebrew(word.word)).forEach((char) => pdfChars.push({ char, word: wordIndex })));
-  const m = sourceChars.length, n = pdfChars.length, width = n + 1;
-  const costs = new Uint16Array((m + 1) * width);
-  const path = new Uint8Array((m + 1) * width);
-  for (let i = 1; i <= m; i++) { costs[i * width] = i; path[i * width] = 1; }
-  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
-    const index = i * width + j;
-    const diagonal = costs[(i - 1) * width + j - 1] + (sourceChars[i - 1].char === pdfChars[j - 1].char ? 0 : 2);
-    const deletion = costs[(i - 1) * width + j] + 1;
-    const insertion = costs[index - 1] + 1;
-    if (diagonal <= deletion && diagonal <= insertion) { costs[index] = diagonal; path[index] = 0; }
-    else if (deletion <= insertion) { costs[index] = deletion; path[index] = 1; }
-    else { costs[index] = insertion; path[index] = 2; }
-  }
-  let end = 0;
-  for (let j = 1; j <= n; j++) if (costs[m * width + j] < costs[m * width + end]) end = j;
-  const matchedWords = comments.map(() => new Set<number>()), exact = comments.map(() => 0), totals = comments.map(() => 0);
-  sourceChars.forEach(({ comment }) => totals[comment]++);
-  let i = m, j = end;
-  while (i > 0) {
-    const direction = path[i * width + j];
-    if (direction === 0 && j > 0) {
-      const source = sourceChars[i - 1], pdf = pdfChars[j - 1];
-      matchedWords[source.comment].add(pdf.word);
-      if (source.char === pdf.char) exact[source.comment]++;
-      i--; j--;
-    } else if (direction === 1 || j === 0) i--;
-    else j--;
-  }
   const blocks: Record<string, LocatedBlock> = {};
-  comments.forEach((comment, index) => {
-    const matched = [...matchedWords[index]].sort((a, b) => a - b);
-    if (!matched.length || exact[index] / totals[index] < .58) return;
-    const words = pdfWords.slice(matched[0], matched.at(-1)! + 1);
-    const lines = lineRects(words);
-    blocks[comment.ref] = { words, lines };
+  const target=pdfWords.map((word)=>normalizeHebrew(word.word));
+  comments.forEach((comment) => {
+    const source=editionWords(comment.dibur);
+    if(!source.length)return;
+    let best:number[]=[];
+    for(let start=0;start<target.length;start++){
+      if(!sameEditionWord(source[0],target[start]))continue;
+      const matched=[start]; let cursor=start+1;
+      for(let sourceIndex=1;sourceIndex<source.length;sourceIndex++){
+        let found=-1;
+        for(let candidate=cursor;candidate<Math.min(target.length,cursor+4);candidate++)if(sameEditionWord(source[sourceIndex],target[candidate])){found=candidate;break;}
+        if(found<0)break;
+        matched.push(found);cursor=found+1;
+      }
+      if(matched.length>best.length || (matched.length===best.length && matched.at(-1)!-matched[0]<best.at(-1)!-best[0]))best=matched;
+    }
+    if(!best.length || best.length/source.length<.58)return;
+    const words=pdfWords.slice(best[0],best.at(-1)!+1);
+    blocks[comment.ref]={words,lines:lineRects(words)};
   });
   return blocks;
 }
