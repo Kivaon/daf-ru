@@ -88,39 +88,9 @@ function lineRects(words: WordRect[]) {
   return rectangles;
 }
 
-function matchBoundaryWords(sourceText: string, candidates: WordRect[], offset: number) {
-  const source = editionWords(sourceText);
-  const target = candidates.map((word) => normalizeHebrew(word.word));
-  const width = target.length + 1;
-  const lengths = new Uint16Array((source.length + 1) * width);
-  for (let i = 1; i <= source.length; i++) for (let j = 1; j <= target.length; j++) {
-    const index = i * width + j;
-    lengths[index] = sameEditionWord(source[i - 1], target[j - 1])
-      ? lengths[(i - 1) * width + j - 1] + 1
-      : Math.max(lengths[(i - 1) * width + j], lengths[index - 1]);
-  }
-  const matched: number[] = [];
-  let exactCharacters = 0, i = source.length, j = target.length;
-  while (i > 0 && j > 0) {
-    if (sameEditionWord(source[i - 1], target[j - 1])) {
-      matched.push(offset + j - 1);
-      exactCharacters += Math.min(source[i - 1].length, target[j - 1].length);
-      i--; j--;
-    }
-    // On a page boundary the same cue word can occur again later in the
-    // segment. In an LCS tie, discard the later PDF candidate so the first
-    // physical occurrence on the daf wins instead of the repeated one.
-    else if (lengths[(i - 1) * width + j] > lengths[i * width + j - 1]) i--;
-    else j--;
-  }
-  return { matched: matched.reverse(), exactCharacters };
-}
-
 function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
   const sourceChars: Array<{ char: string; segment: number }> = [];
   segments.forEach((segment, segmentIndex) => {
-    const pageStartsTractate = segmentIndex === 0 && segment.id.startsWith("2a:");
-    if (!pageStartsTractate && (segmentIndex === 0 || segmentIndex === segments.length - 1)) return;
     editionWords(segment.text).forEach((word) => Array.from(word).forEach((char) => sourceChars.push({ char, segment: segmentIndex })));
   });
   const pdfChars: Array<{ char: string; word: number }> = [];
@@ -155,25 +125,7 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
     } else if (direction === 1 || j === 0) i--;
     else j--;
   }
-  const interiorMatched = matchedWords.slice(1, -1).flatMap((set) => [...set]);
-  if (segments.length > 1 && interiorMatched.length) {
-    const firstInterior = Math.min(...interiorMatched), lastInterior = Math.max(...interiorMatched);
-    if (!segments[0].id.startsWith("2a:")) {
-      const boundary = matchBoundaryWords(segments[0].text, pdfWords.slice(0, firstInterior), 0);
-      if (boundary.exactCharacters >= 10) {
-        matchedWords[0] = new Set(boundary.matched); exact[0] = boundary.exactCharacters;
-        totals[0] = editionWords(segments[0].text).join("").length;
-      }
-    }
-    const lastIndex = segments.length - 1;
-    const boundary = matchBoundaryWords(segments[lastIndex].text, pdfWords.slice(lastInterior + 1), lastInterior + 1);
-    if (boundary.exactCharacters >= 10) {
-      matchedWords[lastIndex] = new Set(boundary.matched); exact[lastIndex] = boundary.exactCharacters;
-      totals[lastIndex] = editionWords(segments[lastIndex].text).join("").length;
-    }
-  }
-  const validationIndexes = totals.map((_, index) => index).filter((index) =>
-    totals[index] > 0 && index !== segments.length - 1 && (index !== 0 || segments[0].id.startsWith("2a:")));
+  const validationIndexes = totals.map((_, index) => index).filter((index) => totals[index] > 0);
   const validationExact = validationIndexes.map((index) => exact[index]);
   const validationTotals = validationIndexes.map((index) => totals[index]);
   const exactCharacters = validationExact.reduce((sum, value) => sum + value, 0);
@@ -183,25 +135,16 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
   // glyph damage can lower it even when individual replies align reliably.
   // Each interior reply is validated separately below at the stricter 70%.
   if (overallRatio < .65) {
-    throw new Error(`Сверка текста Гемары: совпало только ${Math.round(overallRatio * 100)}% (${exactCharacters} из ${totalCharacters} букв). Вероятно, PDF не соответствует выбранному листу. Пограничные реплики страницы не учитывались`);
+    throw new Error(`Сверка текста Гемары: совпало только ${Math.round(overallRatio * 100)}% (${exactCharacters} из ${totalCharacters} букв). Вероятно, PDF не соответствует выбранному листу`);
   }
   const blocks: Record<string, LocatedBlock> = {};
   const warnings: string[] = [];
   let previousEnd = -1;
   segments.forEach((segment, segmentIndex) => {
     let matched = [...matchedWords[segmentIndex]].sort((a, b) => a - b);
-    const boundarySegment = segmentIndex === 0 || segmentIndex === segments.length - 1;
-    if (boundarySegment && totals[segmentIndex] === 0) {
-      warnings.push(`${segment.id}: пограничная реплика не набрала 10 подтверждённых букв на этом PDF, поэтому не выделена`);
-      return;
-    }
     const requiredRatio = .70;
     const segmentRatio = exact[segmentIndex] / totals[segmentIndex];
-    if (boundarySegment && (!matched.length || exact[segmentIndex] < 10)) {
-      warnings.push(`${segment.id}: пограничная реплика не набрала 10 подтверждённых букв на этом PDF, поэтому не выделена`);
-      return;
-    }
-    if (!boundarySegment && (!matched.length || segmentRatio < requiredRatio)) {
+    if (!matched.length || segmentRatio < requiredRatio) {
       warnings.push(`${segment.id}: подтверждено ${Math.round(segmentRatio * 100)}% текста, поэтому интерактивность отключена только для этой реплики`);
       return;
     }
