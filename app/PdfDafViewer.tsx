@@ -238,25 +238,13 @@ function alignDiburimToPdf(pdfWords: WordRect[], comments: CommentaryLink[]) {
 // after the main continuous alignment has established the semantic block.
 function addOpeningWords(blocks:Record<string,LocatedBlock>, candidates:WordRect[], segments:DafSegment[], zoom:number) {
   const result={...blocks};
-  segments.forEach((segment,segmentIndex) => {
+  segments.forEach((segment) => {
     const block=result[segment.id];
     if(!block?.words.length) return;
     const openings=editionWords(segment.text).slice(0,2);
     const current=block.words.slice(0,4).map((word)=>normalizeHebrew(word.word));
     const additions:WordRect[]=[];
     let retainedWords=block.words;
-    if(segmentIndex===0&&!segment.id.startsWith("2a:")){
-      const firstTop=Math.min(...block.words.map((word)=>word.top));
-      const regularHeight=block.words.slice(0,8).reduce((sum,word)=>sum+word.height,0)/Math.min(8,block.words.length);
-      const left=Math.min(...block.words.map((word)=>word.left))-35*zoom;
-      const right=Math.max(...block.words.map((word)=>word.left+word.width))+35*zoom;
-      const openingVocabulary=new Set(editionWords(segment.text).slice(0,14));
-      const precedingLine=candidates.filter((candidate)=>{
-        const word=normalizeHebrew(candidate.word);
-        return openingVocabulary.has(word)&&candidate.top<firstTop-1&&candidate.top>=firstTop-regularHeight*2.2&&candidate.left+candidate.width>=left&&candidate.left<=right;
-      });
-      additions.push(...precedingLine);
-    }
     openings.forEach((opening) => {
       if(current.includes(opening)) return;
       let best:WordRect|undefined, bestDistance=Infinity;
@@ -366,15 +354,7 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
         });
         const gemaraFont = [...gemaraFontScores].sort((first, second) => second[1] - first[1])[0]?.[0];
         if (!gemaraFont) throw new Error("PDF не содержит распознаваемого слоя текста Гемары");
-        const primaryWords=makeWords((item)=>item.fontName===gemaraFont&&item.transform[5]>120&&item.transform[5]<1080);
-        // RTL text runs can have an origin outside the place where their glyphs
-        // are painted. Filter alternate font subsets by each rendered word box,
-        // not by the text item's origin, then let Sefaria alignment validate them.
-        const alternateWords=makeWords((item)=>item.fontName!==gemaraFont&&item.transform[5]>120&&item.transform[5]<1080&&item.height>=11.5)
-          .filter((word)=>word.left/zoom>175&&(word.left+word.width)/zoom<435);
-        const pdfWords=[...primaryWords,...alternateWords]
-          .filter((word,index,array)=>array.findIndex((other)=>other.left===word.left&&other.top===word.top&&other.word===word.word)===index)
-          .sort((first,second)=>second.line-first.line||second.left-first.left);
+        const pdfWords = makeWords((item) => item.fontName === gemaraFont && item.transform[5] > 120 && item.transform[5] < 1080);
         const openingCandidates = makeWords((item) => item.transform[4] > 55 && item.transform[4] < 550 && item.transform[5] > 120 && item.transform[5] < 1080 && item.height >= 10.5);
         const rashiWords = makeWords((item) => item.transform[4] > 400 && item.transform[5] > 120 && item.transform[5] < 1080);
         const tosafotWords = makeWords((item) => item.transform[4] < 212 && item.transform[5] > 120 && item.transform[5] < 1080);
