@@ -241,6 +241,7 @@ function addOpeningWords(blocks:Record<string,LocatedBlock>, candidates:WordRect
     const openings=editionWords(segment.text).slice(0,2);
     const current=block.words.slice(0,4).map((word)=>normalizeHebrew(word.word));
     const additions:WordRect[]=[];
+    let retainedWords=block.words;
     openings.forEach((opening) => {
       if(current.includes(opening)) return;
       let best:WordRect|undefined, bestDistance=Infinity;
@@ -261,9 +262,12 @@ function addOpeningWords(blocks:Record<string,LocatedBlock>, candidates:WordRect
       const oversized=candidates
         .filter((candidate)=>candidate.height>regularHeight*1.35&&candidate.top<blockTop&&blockTop-candidate.top<145*zoom)
         .sort((first,second)=>(blockTop-(first.top+first.height))-(blockTop-(second.top+second.height)))[0];
-      if(oversized)additions.unshift(oversized);
+      if(oversized){
+        additions.unshift(oversized);
+        retainedWords=block.words.filter((word)=>word.top>=oversized.top+oversized.height*.9);
+      }
     }
-    if(additions.length){const words=[...additions,...block.words].filter((word,index,array)=>array.findIndex((other)=>other.left===word.left&&other.top===word.top&&other.word===word.word)===index);result[segment.id]={words,lines:lineRects(words)};}
+    if(additions.length){const words=[...additions,...retainedWords].filter((word,index,array)=>array.findIndex((other)=>other.left===word.left&&other.top===word.top&&other.word===word.word)===index);result[segment.id]={words,lines:lineRects(words)};}
   });
   return result;
 }
