@@ -179,8 +179,11 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
   const exactCharacters = validationExact.reduce((sum, value) => sum + value, 0);
   const totalCharacters = validationTotals.reduce((sum, value) => sum + value, 0);
   const overallRatio = exactCharacters / totalCharacters;
-  if (overallRatio < .84) {
-    throw new Error(`Сверка текста Гемары: совпало ${Math.round(overallRatio * 100)}% (${exactCharacters} из ${totalCharacters} букв; требуется 84%). Пограничные реплики страницы не учитывались`);
+  // The page-wide score is only a wrong-page guard. Edition spelling and PDF
+  // glyph damage can lower it even when individual replies align reliably.
+  // Each interior reply is validated separately below at the stricter 70%.
+  if (overallRatio < .65) {
+    throw new Error(`Сверка текста Гемары: совпало только ${Math.round(overallRatio * 100)}% (${exactCharacters} из ${totalCharacters} букв). Вероятно, PDF не соответствует выбранному листу. Пограничные реплики страницы не учитывались`);
   }
   const blocks: Record<string, LocatedBlock> = {};
   const warnings: string[] = [];
