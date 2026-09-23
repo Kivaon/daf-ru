@@ -209,7 +209,7 @@ function alignDiburimToPdf(pdfWords: WordRect[], comments: CommentaryLink[]) {
   const blocks: Record<string, LocatedBlock> = {};
   const target=pdfWords.map((word)=>normalizeHebrew(word.word));
   comments.forEach((comment) => {
-    const source=editionWords(comment.dibur);
+    const source=editionWords(comment.dibur).filter((word)=>!["גמ","מתני"].includes(word));
     if(!source.length)return;
     let best:number[]=[];
     for(let start=0;start<target.length;start++){
