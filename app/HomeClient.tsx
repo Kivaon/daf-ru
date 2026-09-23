@@ -134,7 +134,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
     if (direction < 0) { if (isFirst) return; if (side === "b") setSide("a"); else { setDaf((value) => value - 1); setSide("b"); } }
     else { if (isLast) return; if (side === "a") setSide("b"); else { setDaf((value) => value + 1); setSide("a"); } }
   };
-  const selectWord = useCallback((blockId:string, word:string) => { setSelectedBlock(blockId); setSelectedWord(word); }, []);
+  const selectWord = useCallback((blockId:string, word:string) => { setPicked(null); setSelectedBlock(blockId); setSelectedWord(word); }, []);
   const located = useCallback((locatedBlock?:string) => { if(locatedBlock)setSelectedBlock(locatedBlock); setBlockLocated(true); }, []);
   const selected = useMemo(() => segments.find((item) => item.id === selectedBlock), [segments, selectedBlock]);
   const linked = useMemo(() => comments.filter((item) => item.base === selectedBlock), [comments, selectedBlock]);
@@ -147,7 +147,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
   const nearbyPages = [nearbyStart,nearbyStart+1,nearbyStart+2].filter((number)=>number<=tractate.lastDaf).flatMap((number)=>["a","b"].filter((amud)=>!(number===tractate.lastDaf&&tractate.lastSide==="a"&&amud==="b")).map((amud)=>`${number}${amud}`));
   const choosePage = (value:string) => { setDaf(Number(value.slice(0,-1))); setSide(value.endsWith("b")?"b":"a"); };
 
-  const captureSelection = () => { const selection=window.getSelection(), text=selection?.toString().trim() || ""; if(text && text.length<80 && /[\u0590-\u05FF]/.test(text)){ const rect=selection?.rangeCount?selection.getRangeAt(0).getBoundingClientRect():null; setPicked({text,x:Math.min(window.innerWidth-170,rect?.left||40),y:(rect?.bottom||90)+8}); } };
+  const captureSelection = () => { const selection=window.getSelection(), text=selection?.toString().trim() || ""; if(selection && !selection.isCollapsed && text && text.length<80 && /[\u0590-\u05FF]/.test(text)){ const rect=selection.rangeCount?selection.getRangeAt(0).getBoundingClientRect():null; setPicked({text,x:Math.min(window.innerWidth-170,rect?.left||40),y:(rect?.bottom||90)+8}); } else setPicked(null); };
   const saveWord = () => { if(!picked)return; const next=words.includes(picked.text)?words:[picked.text,...words]; setWords(next); localStorage.setItem("havruta-dictionary",JSON.stringify(next)); setPicked(null); };
   useEffect(() => {
     if(!selected) return;
@@ -158,7 +158,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
     return ()=>controller.abort();
   },[selected,selectedBlock,tractate.sefaria]);
 
-  const promptForAI = () => selected ? `Ты готовишь учебную статью Daf-Ru на русском языке. Используй только переданные оригиналы, не изменяй и не дополняй их. Дай точный, близкий к тексту перевод и короткое объяснение для начинающего. Для каждого комментария верни отдельный перевод и объяснение. Ответь ТОЛЬКО JSON без markdown по схеме: {"title":"...","translation":"...","explanation":"...","rashi":[{"ref":"...","translation":"...","explanation":"..."}],"tosafot":[{"ref":"...","translation":"...","explanation":"..."}]}\n\nТрактат: ${tractate.ru}\nРеплика: ${selectedBlock}\nГемара: ${selected.text}\nРаши: ${JSON.stringify(rashi.map(x=>({ref:x.ref,original:x.text})))}\nТосафот: ${JSON.stringify(tosafot.map(x=>({ref:x.ref,original:x.text})))}` : "";
+  const promptForAI = () => selected ? `Ты готовишь учебную статью Daf-Ru на русском языке. Используй только переданные оригиналы, не изменяй и не дополняй их. Дай точный, близкий к тексту перевод и короткое ясное объяснение. Для каждого комментария верни отдельный перевод и объяснение. Ответь ТОЛЬКО JSON без markdown по схеме: {"title":"...","translation":"...","explanation":"...","rashi":[{"ref":"...","translation":"...","explanation":"..."}],"tosafot":[{"ref":"...","translation":"...","explanation":"..."}]}\n\nТрактат: ${tractate.ru}\nРеплика: ${selectedBlock}\nГемара: ${selected.text}\nРаши: ${JSON.stringify(rashi.map(x=>({ref:x.ref,original:x.text})))}\nТосафот: ${JSON.stringify(tosafot.map(x=>({ref:x.ref,original:x.text})))}` : "";
   const openEditor = () => { setDraft(activeGeneratedArticle || {ref:selectedBlock,title:"",translation:"",explanation:"",rashi:rashi.map(x=>({ref:x.ref,translation:"",explanation:""})),tosafot:tosafot.map(x=>({ref:x.ref,translation:"",explanation:""})),generatedAt:new Date().toISOString(),provider:"ChatGPT"}); setImportText("");setEditorMessage("");setEditorOpen(true); };
   const copyPrompt = async () => { try { await navigator.clipboard.writeText(promptForAI()); setCopied(true);setEditorMessage("");window.setTimeout(()=>setCopied(false),1800); } catch { setEditorMessage("Браузер не разрешил копирование. Выделите задание вручную."); } };
   const parseImport = () => { try { const raw=JSON.parse(importText) as Record<string,unknown>; setDraft((current)=>({...current!,title:String(raw.title||""),translation:String(raw.translation||""),explanation:String(raw.explanation||""),rashi:Array.isArray(raw.rashi)?raw.rashi as GeneratedComment[]:current!.rashi,tosafot:Array.isArray(raw.tosafot)?raw.tosafot as GeneratedComment[]:current!.tosafot}));setEditorMessage("Ответ разобран. Проверьте и исправьте поля перед сохранением."); } catch { setEditorMessage("Не удалось разобрать JSON. Попросите AI ответить только JSON без оформления."); } };
@@ -184,7 +184,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
           original:selected.text,
           rashi:rashi.map((item)=>({ref:item.ref,original:item.text})),
           tosafot:tosafot.map((item)=>({ref:item.ref,original:item.text})),
-          outputRules:{language:"ru",translation:"точный, близкий к оригиналу",explanation:"краткое, понятное начинающему",originals:"никогда не генерировать"},
+          outputRules:{language:"ru",translation:"точный, близкий к оригиналу",explanation:"краткое и ясное",originals:"никогда не генерировать"},
         }),
       }, {signal:controller.signal});
       await context.registerTool({
@@ -196,7 +196,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
             ref:{type:"string",const:selectedBlock,description:"Точный ref текущей реплики"},
             title:{type:"string",description:"Короткий русский заголовок"},
             translation:{type:"string",description:"Точный русский перевод реплики"},
-            explanation:{type:"string",description:"Краткое объяснение для начинающего"},
+            explanation:{type:"string",description:"Краткое ясное объяснение"},
             rashi:{type:"array",items:{type:"object",properties:{ref:{type:"string"},translation:{type:"string"},explanation:{type:"string"}},required:["ref","translation","explanation"],additionalProperties:false}},
             tosafot:{type:"array",items:{type:"object",properties:{ref:{type:"string"},translation:{type:"string"},explanation:{type:"string"}},required:["ref","translation","explanation"],additionalProperties:false}},
           },
@@ -233,7 +233,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
 
   return <main>
     <header className="topbar"><div className="brand"><span className="brandMark">דף</span><span>Daf-Ru</span></div><div className="progress"><span>{tractate.ru}</span><strong>{daf}{side === "a" ? "а" : "б"}</strong><span className="status"><i/> Позиция сохранена</span></div><div className="account"><span title={user.email}>{user.name}</span><button className="iconButton" onClick={()=>setDictionaryOpen(true)} aria-label="Открыть словарь">⌘ <span>Словарь</span>{words.length>0&&<b>{words.length}</b>}</button></div></header>
-    <section className="workspace"><aside className="sourcePane dafPane">
+    <section className="workspace"><aside className="sourcePane dafPane" onPointerDown={()=>setPicked(null)}>
       <nav className="dafNavigation compactNavigation" aria-label="Навигация по Талмуду"><button disabled={isFirst} onClick={()=>move(-1)} aria-label="Предыдущая страница">←</button><label><select value={tractateTitle} aria-label="Трактат" onChange={(e)=>{setTractateTitle(e.target.value);setDaf(2);setSide("a");}}>{TRACTATES.map((item)=><option key={item.sefaria} value={item.sefaria}>{item.ru}</option>)}</select></label><label><select value={pageKey} aria-label="Страница" onChange={(e)=>choosePage(e.target.value)}>{pageOptions.map((value)=><option key={value} value={value}>{value.replace("a","а").replace("b","б")}</option>)}</select></label><button disabled={isLast} onClick={()=>move(1)} aria-label="Следующая страница">→</button><div className="zoomControls"><button onClick={()=>setZoom(v=>Math.max(.6,v-.15))} aria-label="Уменьшить">−</button><span>{Math.round(zoom*100)}%</span><button onClick={()=>setZoom(v=>Math.min(1.8,v+.15))} aria-label="Увеличить">+</button></div></nav>
       <div className="dafViewport">{status==="ready"?<PdfDafViewer zoom={zoom} selectedBlock={selectedBlock} onSelect={selectWord} onBlockLocated={located} pdfUrl={pdfUrl} label={label} segments={segments} commentary={comments}/>:<div className={`pageDataStatus ${status}`}>{status==="loading"?"Получаем лист и текст…":<><b>Не удалось загрузить лист</b><small>{error}</small></>}</div>}</div>
       <div className="pageGuide compactGuide"><span>Лист: Shas.org / HebrewBooks · текст и связи: Sefaria</span></div>
