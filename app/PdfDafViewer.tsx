@@ -238,13 +238,25 @@ function alignDiburimToPdf(pdfWords: WordRect[], comments: CommentaryLink[]) {
 // after the main continuous alignment has established the semantic block.
 function addOpeningWords(blocks:Record<string,LocatedBlock>, candidates:WordRect[], segments:DafSegment[], zoom:number) {
   const result={...blocks};
-  segments.forEach((segment) => {
+  segments.forEach((segment,segmentIndex) => {
     const block=result[segment.id];
     if(!block?.words.length) return;
     const openings=editionWords(segment.text).slice(0,2);
     const current=block.words.slice(0,4).map((word)=>normalizeHebrew(word.word));
     const additions:WordRect[]=[];
     let retainedWords=block.words;
+    if(segmentIndex===0&&!segment.id.startsWith("2a:")){
+      const firstTop=Math.min(...block.words.map((word)=>word.top));
+      const regularHeight=block.words.slice(0,8).reduce((sum,word)=>sum+word.height,0)/Math.min(8,block.words.length);
+      const left=Math.min(...block.words.map((word)=>word.left))-35*zoom;
+      const right=Math.max(...block.words.map((word)=>word.left+word.width))+35*zoom;
+      const openingVocabulary=new Set(editionWords(segment.text).slice(0,14));
+      const precedingLine=candidates.filter((candidate)=>{
+        const word=normalizeHebrew(candidate.word);
+        return openingVocabulary.has(word)&&candidate.top<firstTop-1&&candidate.top>=firstTop-regularHeight*2.2&&candidate.left+candidate.width>=left&&candidate.left<=right;
+      });
+      additions.push(...precedingLine);
+    }
     openings.forEach((opening) => {
       if(current.includes(opening)) return;
       let best:WordRect|undefined, bestDistance=Infinity;
