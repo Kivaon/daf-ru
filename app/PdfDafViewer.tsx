@@ -283,6 +283,12 @@ export function PdfDafViewer({ zoom, selectedBlock, landingEdge = "start", onSel
         const items = textContent.items.filter((item): item is typeof item & { str: string; transform: number[]; width: number; height: number; fontName: string } => "str" in item && "fontName" in item);
         const [a, b, c, d, e, f] = viewport.transform;
         const toViewport = (x: number, y: number) => ({ x: a * x + c * y + e, y: b * x + d * y + f });
+        const isOnPage = (item: typeof items[number]) => {
+          const first = toViewport(item.transform[4], item.transform[5]);
+          const second = toViewport(item.transform[4] + item.width, item.transform[5] + item.height);
+          const top = Math.min(first.y, second.y), bottom = Math.max(first.y, second.y);
+          return bottom > 0 && top < viewport.height;
+        };
         const makeWords = (filter: (item: typeof items[number]) => boolean) => items
           .filter(filter)
           .flatMap((item) => {
@@ -301,16 +307,16 @@ export function PdfDafViewer({ zoom, selectedBlock, landingEdge = "start", onSel
         // Rashi and Tosafot. Identify its typeface first, then retain its real geometry.
         const gemaraFontScores = new Map<string, number>();
         items.forEach((item) => {
-          if (item.transform[5] <= 120 || item.transform[5] >= 1080 || item.height < 11.5) return;
+          if (!isOnPage(item) || item.height < 11.5) return;
           const hebrewLength = normalizeHebrew(decodeWord(item.str)).length;
           if (hebrewLength) gemaraFontScores.set(item.fontName, (gemaraFontScores.get(item.fontName) ?? 0) + hebrewLength);
         });
         const gemaraFont = [...gemaraFontScores].sort((first, second) => second[1] - first[1])[0]?.[0];
         if (!gemaraFont) throw new Error("PDF не содержит распознаваемого слоя текста Гемары");
-        const pdfWords = makeWords((item) => item.fontName === gemaraFont && item.transform[5] > 120 && item.transform[5] < 1080);
-        const openingCandidates = makeWords((item) => item.transform[4] > 55 && item.transform[4] < 550 && item.transform[5] > 120 && item.transform[5] < 1080 && item.height >= 10.5);
-        const rashiWords = makeWords((item) => item.transform[4] > 400 && item.transform[5] > 120 && item.transform[5] < 1080);
-        const tosafotWords = makeWords((item) => item.transform[4] < 212 && item.transform[5] > 120 && item.transform[5] < 1080);
+        const pdfWords = makeWords((item) => item.fontName === gemaraFont && isOnPage(item));
+        const openingCandidates = makeWords((item) => item.transform[4] > 55 && item.transform[4] < 550 && isOnPage(item) && item.height >= 10.5);
+        const rashiWords = makeWords((item) => item.transform[4] > 400 && isOnPage(item));
+        const tosafotWords = makeWords((item) => item.transform[4] < 212 && isOnPage(item));
         let locatedBlocks: Record<string, LocatedBlock> = {}, locatedCommentary: Record<string, LocatedBlock> = {}, mappingError = "", mappingNotice = "";
         try {
           const alignment = alignSefariaToPdf(pdfWords, segments);
