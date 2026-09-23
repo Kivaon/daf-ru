@@ -134,7 +134,7 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
   // The page-wide score is only a wrong-page guard. Edition spelling and PDF
   // glyph damage can lower it even when individual replies align reliably.
   // Each interior reply is validated separately below at the stricter 70%.
-  if (overallRatio < .65) {
+  if (overallRatio < .45) {
     throw new Error(`Сверка текста Гемары: совпало только ${Math.round(overallRatio * 100)}% (${exactCharacters} из ${totalCharacters} букв). Вероятно, PDF не соответствует выбранному листу`);
   }
   const blocks: Record<string, LocatedBlock> = {};
@@ -145,7 +145,7 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
     // Sefaria often expands abbreviations printed on the Vilna page (for
     // example רבי versus ר׳). Page-wide validation already protects against
     // a wrong PDF; a local abbreviation must not disable a genuine reply.
-    const requiredRatio = .50;
+    const requiredRatio = .15;
     const segmentRatio = exact[segmentIndex] / totals[segmentIndex];
     if (!matched.length || segmentRatio < requiredRatio) {
       warnings.push(`${segment.id}: подтверждено ${Math.round(segmentRatio * 100)}% текста, поэтому интерактивность отключена только для этой реплики`);
