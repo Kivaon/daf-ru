@@ -25,7 +25,7 @@ function loadPdfJs() {
 
 const glyphs: Record<string, string> = {
   "‡":"א", "·":"ב", "‚":"ג", "„":"ד", "‰":"ה", "Â":"ו", "Ê":"ז", "Á":"ח", "Ë":"ט", "È":"י",
-  "Î":"כ", "Í":"ך", "Ï":"ל", "Ó":"מ", "Ì":"ם", "\u0014":"נ", "Ô":"ן", "Ò":"ס", "Ú":"ע", "Ù":"פ",
+  "Î":"כ", "Í":"ך", "Ï":"ל", "Ó":"מ", "Ì":"ם", "\b":"נ", "\u0010":"נ", "\u0011":"נ", "\u0012":"נ", "\u0014":"נ", "Ô":"ן", "Ò":"ס", "Ú":"ע", "Ù":"פ",
   "Û":"ף", "ˆ":"צ", "ı":"ץ", "˜":"ק", "¯":"ר", "˘":"ש", "˙":"ת",
 };
 const decodeWord = (raw: string) => Array.from(raw).map((char) => glyphs[char] ?? char).reverse().join("").replace("'", "׳");
@@ -313,7 +313,17 @@ export function PdfDafViewer({ zoom, selectedBlock, landingEdge = "start", onSel
         });
         const gemaraFont = [...gemaraFontScores].sort((first, second) => second[1] - first[1])[0]?.[0];
         if (!gemaraFont) throw new Error("PDF не содержит распознаваемого слоя текста Гемары");
-        const pdfWords = makeWords((item) => item.fontName === gemaraFont && isOnPage(item));
+        const gemaraHeights = items
+          .filter((item) => item.fontName === gemaraFont && isOnPage(item))
+          .map((item) => item.height)
+          .sort((first, second) => first - second);
+        const gemaraHeight = gemaraHeights[Math.floor(gemaraHeights.length / 2)];
+        // A Vilna line can cross several embedded PDF font subsets when the
+        // Gemara column widens or narrows around Rashi/Tosafot. Those subsets
+        // have different fontName values but the same printed letter height.
+        // Following only the most frequent font loses precisely the words at
+        // such bends, so collect the complete printed Gemara size instead.
+        const pdfWords = makeWords((item) => isOnPage(item) && Math.abs(item.height - gemaraHeight) <= .8);
         const openingCandidates = makeWords((item) => item.transform[4] > 55 && item.transform[4] < 550 && isOnPage(item) && item.height >= 10.5);
         const rashiWords = makeWords((item) => item.transform[4] > 400 && isOnPage(item));
         const tosafotWords = makeWords((item) => item.transform[4] < 212 && isOnPage(item));
