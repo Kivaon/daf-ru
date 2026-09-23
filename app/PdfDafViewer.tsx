@@ -191,10 +191,16 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
   segments.forEach((segment, segmentIndex) => {
     let matched = [...matchedWords[segmentIndex]].sort((a, b) => a - b);
     const boundarySegment = segmentIndex === 0 || segmentIndex === segments.length - 1;
-    if (boundarySegment && totals[segmentIndex] === 0) return;
+    if (boundarySegment && totals[segmentIndex] === 0) {
+      warnings.push(`${segment.id}: пограничная реплика не набрала 10 подтверждённых букв на этом PDF, поэтому не выделена`);
+      return;
+    }
     const requiredRatio = .70;
     const segmentRatio = exact[segmentIndex] / totals[segmentIndex];
-    if (boundarySegment && (!matched.length || exact[segmentIndex] < 10)) return;
+    if (boundarySegment && (!matched.length || exact[segmentIndex] < 10)) {
+      warnings.push(`${segment.id}: пограничная реплика не набрала 10 подтверждённых букв на этом PDF, поэтому не выделена`);
+      return;
+    }
     if (!boundarySegment && (!matched.length || segmentRatio < requiredRatio)) {
       warnings.push(`${segment.id}: подтверждено ${Math.round(segmentRatio * 100)}% текста, поэтому интерактивность отключена только для этой реплики`);
       return;
@@ -402,11 +408,12 @@ export function PdfDafViewer({ zoom, selectedBlock, landingEdge = "start", onSel
   const activeComment = hoveredComment ?? pinnedComment;
   const activeCommentary = linkedComments.find((comment) => comment.ref === activeComment);
   const gemaraCue = activeCommentary && selected ? locateDiburInGemara(selected.words, activeCommentary.dibur) : null;
+  const tractateLabel=label.replace(/\s+\d+[аб]$/,"");
   return <div className="pdfStage" style={{ width: size.width, height: size.height }}>
     <canvas ref={canvasRef} aria-label={`Оригинальный PDF, ${label}`} />
     {status === "loading" && <div className="pdfStatus">Загружаем оригинальный PDF…</div>}
     {status === "error" && <div className="pdfStatus error">Не удалось связать лист с текстом.<small>{errorMessage}</small><a href={pdfUrl}>Открыть оригинал</a></div>}
-    {status === "ready" && alignmentWarning && <div className="alignmentWarning">{Object.keys(blocks).length ? "Лист размечен частично: " : "Лист открыт, интерактивная разметка отключена: "}{alignmentWarning}</div>}
+    {status === "ready" && alignmentWarning && <div className="alignmentWarning">{tractateLabel} · {Object.keys(blocks).length ? "Лист размечен частично: " : "Лист открыт, интерактивная разметка отключена: "}{alignmentWarning}</div>}
     {status === "ready" && <div className="pdfInteraction" aria-label="Интерактивный слой оригинального листа" data-active-comment={activeComment ?? ""} data-gemara-cue={gemaraCue ? "yes" : "no"}>
       {selected?.lines.map((rect, index) => <span key={`selected-${index}`} className="textHighlight selectedHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
       {preview?.lines.map((rect, index) => <span key={`preview-${index}`} className="textHighlight hoverHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
