@@ -242,15 +242,27 @@ function addOpeningWords(blocks:Record<string,LocatedBlock>, candidates:WordRect
     const current=block.words.slice(0,4).map((word)=>normalizeHebrew(word.word));
     const additions:WordRect[]=[];
     openings.forEach((opening) => {
-      if(current.some((word)=>sameEditionWord(opening,word))) return;
+      if(current.includes(opening)) return;
       let best:WordRect|undefined, bestDistance=Infinity;
       candidates.forEach((candidate) => {
-        if(!sameEditionWord(opening,normalizeHebrew(candidate.word))) return;
+        if(opening!==normalizeHebrew(candidate.word)) return;
         const distance=Math.min(...block.words.slice(0,5).map((word)=>Math.hypot(candidate.left-word.left,candidate.top-word.top)));
         if(distance<bestDistance){best=candidate;bestDistance=distance;}
       });
       if(best&&bestDistance<150*zoom)additions.push(best);
     });
+    // On Vilna pages the first word of a Mishnah is sometimes a decorative,
+    // oversized heading whose PDF glyph encoding cannot be decoded as Hebrew.
+    // Its geometry is nevertheless reliable: it is the nearest large word
+    // immediately above the first regular line in the central Gemara column.
+    if(segment.kind==="Мишна"){
+      const regularHeight=block.words.slice(0,8).reduce((sum,word)=>sum+word.height,0)/Math.min(8,block.words.length);
+      const blockTop=Math.min(...block.words.slice(0,8).map((word)=>word.top));
+      const oversized=candidates
+        .filter((candidate)=>candidate.height>regularHeight*1.35&&candidate.top<blockTop&&blockTop-candidate.top<145*zoom)
+        .sort((first,second)=>(blockTop-(first.top+first.height))-(blockTop-(second.top+second.height)))[0];
+      if(oversized)additions.unshift(oversized);
+    }
     if(additions.length){const words=[...additions,...block.words].filter((word,index,array)=>array.findIndex((other)=>other.left===word.left&&other.top===word.top&&other.word===word.word)===index);result[segment.id]={words,lines:lineRects(words)};}
   });
   return result;
