@@ -25,7 +25,7 @@ function loadPdfJs() {
 
 const glyphs: Record<string, string> = {
   "‡":"א", "·":"ב", "‚":"ג", "„":"ד", "‰":"ה", "Â":"ו", "Ê":"ז", "Á":"ח", "Ë":"ט", "È":"י",
-  "Î":"כ", "Í":"ך", "Ï":"ל", "Ó":"מ", "Ì":"ם", "\b":"נ", "\u0010":"נ", "\u0011":"נ", "\u0012":"נ", "\u0014":"נ", "Ô":"ן", "Ò":"ס", "Ú":"ע", "Ù":"פ",
+  "Î":"כ", "Í":"ך", "Ï":"ל", "Ó":"מ", "Ì":"ם", "\u0005":"נ", "\b":"נ", "\u0010":"נ", "\u0011":"נ", "\u0012":"נ", "\u0014":"נ", "Ô":"ן", "Ò":"ס", "Ú":"ע", "Ù":"פ",
   "Û":"ף", "ˆ":"צ", "ı":"ץ", "˜":"ק", "¯":"ר", "˘":"ש", "˙":"ת",
 };
 const decodeWord = (raw: string) => Array.from(raw).map((char) => glyphs[char] ?? char).reverse().join("").replace("'", "׳");
@@ -142,7 +142,10 @@ function alignSefariaToPdf(pdfWords: WordRect[], segments: DafSegment[]) {
   let previousEnd = -1;
   segments.forEach((segment, segmentIndex) => {
     let matched = [...matchedWords[segmentIndex]].sort((a, b) => a - b);
-    const requiredRatio = .70;
+    // Sefaria often expands abbreviations printed on the Vilna page (for
+    // example רבי versus ר׳). Page-wide validation already protects against
+    // a wrong PDF; a local abbreviation must not disable a genuine reply.
+    const requiredRatio = .50;
     const segmentRatio = exact[segmentIndex] / totals[segmentIndex];
     if (!matched.length || segmentRatio < requiredRatio) {
       warnings.push(`${segment.id}: подтверждено ${Math.round(segmentRatio * 100)}% текста, поэтому интерактивность отключена только для этой реплики`);
