@@ -250,6 +250,32 @@ function alignDiburimToPdf(pdfWords: WordRect[], comments: CommentaryLink[]) {
   return blocks;
 }
 
+// Display words such as מתני׳ / גמ׳ and a Mishnah's oversized opening word can
+// use another font in the Vilna PDF. Add only nearby, text-confirmed candidates
+// after the main continuous alignment has established the semantic block.
+function addOpeningWords(blocks:Record<string,LocatedBlock>, candidates:WordRect[], segments:DafSegment[], zoom:number) {
+  const result={...blocks};
+  segments.forEach((segment) => {
+    const block=result[segment.id];
+    if(!block?.words.length) return;
+    const openings=editionWords(segment.text).slice(0,2);
+    const current=block.words.slice(0,4).map((word)=>normalizeHebrew(word.word));
+    const additions:WordRect[]=[];
+    openings.forEach((opening) => {
+      if(current.some((word)=>sameEditionWord(opening,word))) return;
+      let best:WordRect|undefined, bestDistance=Infinity;
+      candidates.forEach((candidate) => {
+        if(!sameEditionWord(opening,normalizeHebrew(candidate.word))) return;
+        const distance=Math.min(...block.words.slice(0,5).map((word)=>Math.hypot(candidate.left-word.left,candidate.top-word.top)));
+        if(distance<bestDistance){best=candidate;bestDistance=distance;}
+      });
+      if(best&&bestDistance<150*zoom)additions.push(best);
+    });
+    if(additions.length){const words=[...additions,...block.words].filter((word,index,array)=>array.findIndex((other)=>other.left===word.left&&other.top===word.top&&other.word===word.word)===index);result[segment.id]={words,lines:lineRects(words)};}
+  });
+  return result;
+}
+
 function locateDiburInGemara(words: WordRect[], dibur: string) {
   const source = editionWords(dibur).filter((word) => !["גמ", "מתני"].includes(word));
   const target = words.map((word) => normalizeHebrew(word.word));
@@ -330,12 +356,13 @@ export function PdfDafViewer({ zoom, selectedBlock, onSelect, onBlockLocated, pd
         const gemaraFont = [...gemaraFontScores].sort((first, second) => second[1] - first[1])[0]?.[0];
         if (!gemaraFont) throw new Error("PDF не содержит распознаваемого слоя текста Гемары");
         const pdfWords = makeWords((item) => item.fontName === gemaraFont && item.transform[5] > 120 && item.transform[5] < 1080);
+        const openingCandidates = makeWords((item) => item.transform[4] > 140 && item.transform[4] < 475 && item.transform[5] > 120 && item.transform[5] < 1080 && item.height >= 10.5);
         const rashiWords = makeWords((item) => item.transform[4] > 400 && item.transform[5] > 120 && item.transform[5] < 1080);
         const tosafotWords = makeWords((item) => item.transform[4] < 212 && item.transform[5] > 120 && item.transform[5] < 1080);
         let locatedBlocks: Record<string, LocatedBlock> = {}, locatedCommentary: Record<string, LocatedBlock> = {}, mappingError = "", mappingNotice = "";
         try {
           const alignment = alignSefariaToPdf(pdfWords, segments);
-          locatedBlocks = alignment.blocks;
+          locatedBlocks = addOpeningWords(alignment.blocks, openingCandidates, segments, zoom);
           mappingNotice = alignment.warnings.join(" · ");
           locatedCommentary = {
             ...alignDiburimToPdf(rashiWords, commentary.filter((comment) => comment.commentator === "Rashi")),
