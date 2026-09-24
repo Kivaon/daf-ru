@@ -19,6 +19,8 @@ const boldTranslationService = (value:string) => { const match=value.match(/^\s*
 const boldTranslatedDibur = (value:string) => { const quoted=value.match(/^\s*[«"](.+?)[»"]\s*([—–\-:]?)\s*/); if(quoted)return <><strong>{quoted[1]}</strong>{quoted[2]?` ${quoted[2]} `:" "}{value.slice(quoted[0].length)}</>; const opening=value.match(/^\s*(.+?)\s+([—–-])\s+/); return opening ? <><strong>{opening[1]}</strong>{` ${opening[2]} `}{value.slice(opening[0].length)}</> : value; };
 
 type GeneratedComment = { ref:string; translation:string; explanation:string };
+type GeneratedPart = { ref:string; translation:string };
+type GeneratedPage = { ref:string; rashi:GeneratedComment[]; tosafot:GeneratedComment[] };
 type GeneratedArticle = {
   ref:string;
   title:string;
@@ -29,6 +31,24 @@ type GeneratedArticle = {
   generatedAt:string;
   provider?:string;
   updatedAt?:string;
+  unitRef?:string;
+  parts?:GeneratedPart[];
+  pages?:GeneratedPage[];
+};
+
+type PageBundle = { pageKey:string; segments:DafSegment[]; comments:CommentaryLink[]; davidsonHe:string[]; davidsonEn:string[] };
+type BoundaryState = { previous?:PageBundle; next?:PageBundle; joinsPrevious:boolean; joinsNext:boolean };
+const pageBefore = (daf:number, side:"a"|"b") => side === "b" ? `${daf}a` : daf > 2 ? `${daf-1}b` : null;
+const pageAfter = (daf:number, side:"a"|"b", lastDaf:number, lastSide:"a"|"b") => {
+  if(side === "a") return daf === lastDaf && lastSide === "a" ? null : `${daf}b`;
+  return daf < lastDaf ? `${daf+1}a` : null;
+};
+const sentenceEnds = (value:string) => /[.!?׃։][\s"'׳״’”)]*$/.test(clean(value));
+const beginsLowercase = (value:string) => /^[^A-Za-z]*[a-z]/.test(clean(value));
+const boundaryContinues = (left:PageBundle, right:PageBundle) => {
+  const leftHe=left.davidsonHe.at(-1)||"", rightHe=right.davidsonHe[0]||"";
+  const leftEn=left.davidsonEn.at(-1)||"", rightEn=right.davidsonEn[0]||"";
+  return Boolean(leftHe && rightHe && leftEn && rightEn && !sentenceEnds(leftHe) && !sentenceEnds(leftEn) && beginsLowercase(rightEn));
 };
 
 type SiteTool = {
@@ -66,6 +86,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [landingEdge, setLandingEdge] = useState<"start"|"end">("start");
+  const [boundaries, setBoundaries] = useState<BoundaryState>({joinsPrevious:false,joinsNext:false});
 
   const tractate = useMemo(() => tractateBySefaria(tractateTitle), [tractateTitle]);
   const pageKey = `${daf}${side}`;
@@ -97,30 +118,36 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
     if (!restored) return;
     const controller = new AbortController();
     (async () => {
-      setStatus("loading"); setError(""); setBlockLocated(false); setComments([]); setSelectedWord(null);
+      setStatus("loading"); setError(""); setBlockLocated(false); setComments([]); setSelectedWord(null); setBoundaries({joinsPrevious:false,joinsNext:false});
       try {
-        const ref = `${tractate.sefaria}.${pageKey}`;
-        const [textResponse, linksResponse] = await Promise.all([
-          fetch(`https://www.sefaria.org/api/texts/${encodeURIComponent(ref)}/he/Wikisource_Talmud_Bavli?context=0&commentary=0`, { signal:controller.signal }),
-          fetch(`https://www.sefaria.org/api/links/${encodeURIComponent(ref)}?with_text=1`, { signal:controller.signal }),
-        ]);
-        if (!textResponse.ok) throw new Error("Sefaria не вернула текст листа");
-        const data = await textResponse.json() as { he?:string[] };
-        const nextSegments = (data.he || []).map((text, index) => ({ id:`${pageKey}:${index + 1}`, kind:/^(מתני|מַתְנִי)/.test(clean(text)) ? "Мишна" : "Гемара", text:clean(text) })).filter((item) => item.text);
-        if (!nextSegments.length) throw new Error("В Sefaria не найдены реплики листа");
-        let nextComments: CommentaryLink[] = [];
-        if (linksResponse.ok) {
-          const links = await linksResponse.json() as Array<Record<string, unknown>>;
-          nextComments = links.flatMap((link) => {
+        const loadBundle = async (key:string, includeLinks=true):Promise<PageBundle> => {
+          const ref = `${tractate.sefaria}.${key}`;
+          const [textResponse,davidsonResponse,linksResponse]=await Promise.all([
+            fetch(`https://www.sefaria.org/api/texts/${encodeURIComponent(ref)}/he/Wikisource_Talmud_Bavli?context=0&commentary=0`,{signal:controller.signal}),
+            fetch(`https://www.sefaria.org/api/texts/${encodeURIComponent(ref)}?context=0&commentary=0`,{signal:controller.signal}),
+            includeLinks?fetch(`https://www.sefaria.org/api/links/${encodeURIComponent(ref)}?with_text=1`,{signal:controller.signal}):Promise.resolve(null),
+          ]);
+          if(!textResponse.ok)throw new Error("Sefaria не вернула текст листа");
+          const data=await textResponse.json() as {he?:string[]};
+          const davidson=davidsonResponse.ok?await davidsonResponse.json() as {he?:string[];text?:string[]}:{he:[],text:[]};
+          const pageSegments=(data.he||[]).map((text,index)=>({id:`${key}:${index+1}`,kind:/^(מתני|מַתְנִי)/.test(clean(text))?"Мишна":"Гемара",text:clean(text)})).filter((item)=>item.text);
+          let pageComments:CommentaryLink[]=[];
+          if(linksResponse?.ok){const links=await linksResponse.json() as Array<Record<string,unknown>>;pageComments=links.flatMap((link)=>{
             const commentator = (link.collectiveTitle as { en?:string } | undefined)?.en;
             const match = String(link.anchorRef || "").match(/(\d+[ab]):(\d+)/i);
             const text = clean(String(link.he || ""));
             if ((commentator !== "Rashi" && commentator !== "Tosafot") || !match || !text) return [];
             return [{ base:`${match[1]}:${match[2]}`, commentator, ref:String(link.ref || link.sourceRef || ""), text, dibur:dibur(String(link.he || "")) } as CommentaryLink];
-          });
-        }
+          });}
+          return{pageKey:key,segments:pageSegments,comments:pageComments,davidsonHe:davidson.he||[],davidsonEn:davidson.text||[]};
+        };
+        const previousKey=pageBefore(daf,side),nextKey=pageAfter(daf,side,tractate.lastDaf,tractate.lastSide);
+        const [current,previous,next]=await Promise.all([loadBundle(pageKey),previousKey?loadBundle(previousKey).catch(()=>undefined):Promise.resolve(undefined),nextKey?loadBundle(nextKey).catch(()=>undefined):Promise.resolve(undefined)]);
+        const nextSegments=current.segments,nextComments=current.comments;
+        if (!nextSegments.length) throw new Error("В Sefaria не найдены реплики листа");
         if (controller.signal.aborted) return;
         setSegments(nextSegments); setComments(nextComments);
+        setBoundaries({previous,next,joinsPrevious:Boolean(previous&&boundaryContinues(previous,current)),joinsNext:Boolean(next&&boundaryContinues(current,next))});
         const preferred = landingEdge === "end" ? nextSegments.at(-1)!.id : nextSegments[0].id;
         setSelectedBlock(preferred);
         setStatus("ready");
@@ -141,12 +168,29 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
   const linked = useMemo(() => comments.filter((item) => item.base === selectedBlock), [comments, selectedBlock]);
   const rashi = useMemo(() => linked.filter((item) => item.commentator === "Rashi"), [linked]);
   const tosafot = useMemo(() => linked.filter((item) => item.commentator === "Tosafot"), [linked]);
+  const unitSegments = useMemo(() => {
+    if(!selected) return [];
+    const first=segments[0]?.id===selected.id, last=segments.at(-1)?.id===selected.id;
+    if(first && boundaries.joinsPrevious && boundaries.previous?.segments.length) return [boundaries.previous.segments.at(-1)!,selected];
+    if(last && boundaries.joinsNext && boundaries.next?.segments.length) return [selected,boundaries.next.segments[0]];
+    return [selected];
+  },[selected,segments,boundaries]);
+  const isSpanningUnit=unitSegments.length===2;
+  const unitRef=isSpanningUnit?`${tractate.sefaria} ${unitSegments[0].id}-${unitSegments[1].id}`:undefined;
+  const commentsForRef = useCallback((ref:string) => {
+    const key=ref.split(":")[0];
+    const source=key===pageKey?comments:key===boundaries.previous?.pageKey?boundaries.previous.comments:key===boundaries.next?.pageKey?boundaries.next.comments:[];
+    const linkedToPart=source.filter((item)=>item.base===ref);
+    return {rashi:linkedToPart.filter((item)=>item.commentator==="Rashi"),tosafot:linkedToPart.filter((item)=>item.commentator==="Tosafot")};
+  },[pageKey,comments,boundaries]);
+  const unitPages = useMemo(() => unitSegments.map((part)=>({ref:part.id,...commentsForRef(part.id)})),[unitSegments,commentsForRef]);
   const savedArticle = tractate.sefaria === "Bekhorot" && selectedBlock === "2a:3";
   const activeGeneratedArticle = generatedArticle?.ref === selectedBlock ? generatedArticle : null;
   const pageOptions = Array.from({length:tractate.lastDaf-1},(_,i)=>i+2).flatMap((number) => ["a","b"].filter((amud) => !(number===tractate.lastDaf&&tractate.lastSide==="a"&&amud==="b")).map((amud) => `${number}${amud}`));
   const nearbyStart = Math.max(2, Math.min(daf <= 3 ? 2 : daf - 1, Math.max(2, tractate.lastDaf - 2)));
   const nearbyPages = [nearbyStart,nearbyStart+1,nearbyStart+2].filter((number)=>number<=tractate.lastDaf).flatMap((number)=>["a","b"].filter((amud)=>!(number===tractate.lastDaf&&tractate.lastSide==="a"&&amud==="b")).map((amud)=>`${number}${amud}`));
   const choosePage = (value:string) => { setLandingEdge("start"); setDaf(Number(value.slice(0,-1))); setSide(value.endsWith("b")?"b":"a"); };
+  const openUnitPart = (ref:string) => { const key=ref.split(":")[0]; setLandingEdge(key===boundaries.previous?.pageKey?"end":"start");setDaf(Number(key.slice(0,-1)));setSide(key.endsWith("b")?"b":"a"); };
 
   const captureSelection = () => { const selection=window.getSelection(), text=selection?.toString().trim() || ""; if(selection && !selection.isCollapsed && text && text.length<80 && /[\u0590-\u05FF]/.test(text)){ const rect=selection.rangeCount?selection.getRangeAt(0).getBoundingClientRect():null; setPicked({text,x:Math.min(window.innerWidth-170,rect?.left||40),y:(rect?.bottom||90)+8}); } else setPicked(null); };
   const saveWord = () => { if(!picked)return; const next=words.includes(picked.text)?words:[picked.text,...words]; setWords(next); localStorage.setItem("havruta-dictionary",JSON.stringify(next)); setPicked(null); };
@@ -159,10 +203,21 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
     return ()=>controller.abort();
   },[selected,selectedBlock,tractate.sefaria]);
 
-  const promptForAI = () => selected ? `Ты готовишь учебную статью Daf-Ru на русском языке. Используй только переданные оригиналы, не изменяй и не дополняй их. Дай точный, близкий к тексту перевод и короткое ясное объяснение. Для каждого комментария верни отдельный перевод и объяснение. Ответь ТОЛЬКО JSON без markdown по схеме: {"title":"...","translation":"...","explanation":"...","rashi":[{"ref":"...","translation":"...","explanation":"..."}],"tosafot":[{"ref":"...","translation":"...","explanation":"..."}]}\n\nТрактат: ${tractate.ru}\nРеплика: ${selectedBlock}\nГемара: ${selected.text}\nРаши: ${JSON.stringify(rashi.map(x=>({ref:x.ref,original:x.text})))}\nТосафот: ${JSON.stringify(tosafot.map(x=>({ref:x.ref,original:x.text})))}` : "";
-  const openEditor = () => { setDraft(activeGeneratedArticle || {ref:selectedBlock,title:"",translation:"",explanation:"",rashi:rashi.map(x=>({ref:x.ref,translation:"",explanation:""})),tosafot:tosafot.map(x=>({ref:x.ref,translation:"",explanation:""})),generatedAt:new Date().toISOString(),provider:"ChatGPT"}); setImportText("");setEditorMessage("");setEditorOpen(true); };
+  const emptyComment = (item:CommentaryLink):GeneratedComment => ({ref:item.ref,translation:"",explanation:""});
+  const promptForAI = () => {
+    if(!selected)return "";
+    const instruction="Ты готовишь учебную статью Daf-Ru на русском языке. Используй только переданные оригиналы, не изменяй и не дополняй их. Дай точный, близкий к тексту перевод и короткое ясное объяснение. Для каждого комментария верни отдельный перевод и объяснение. Ответь ТОЛЬКО JSON без markdown.";
+    if(!isSpanningUnit)return `${instruction}\nСхема: {"title":"...","translation":"...","explanation":"...","rashi":[{"ref":"...","translation":"...","explanation":"..."}],"tosafot":[{"ref":"...","translation":"...","explanation":"..."}]}\n\nТрактат: ${tractate.ru}\nРеплика: ${selectedBlock}\nГемара: ${selected.text}\nРаши: ${JSON.stringify(rashi.map(x=>({ref:x.ref,original:x.text})))}\nТосафот: ${JSON.stringify(tosafot.map(x=>({ref:x.ref,original:x.text})))}`;
+    const sourcePages=unitPages.map((entry)=>({ref:entry.ref,rashi:entry.rashi.map(x=>({ref:x.ref,original:x.text})),tosafot:entry.tosafot.map(x=>({ref:x.ref,original:x.text}))}));
+    return `${instruction}\nЭто одна реплика, физически рассечённая границей двух листов. Переведи её как единое целое, но верни отдельный перевод каждой части. Объяснение общее. Комментарии относятся только к своей странице.\nСхема: {"title":"...","parts":[{"ref":"${unitSegments[0].id}","translation":"..."},{"ref":"${unitSegments[1].id}","translation":"..."}],"explanation":"...","pages":[{"ref":"${unitSegments[0].id}","rashi":[],"tosafot":[]},{"ref":"${unitSegments[1].id}","rashi":[],"tosafot":[]}]}\n\nТрактат: ${tractate.ru}\nСоставная реплика: ${unitRef}\nЧасти Гемары: ${JSON.stringify(unitSegments.map(x=>({ref:x.id,original:x.text})))}\nКомментарии по страницам: ${JSON.stringify(sourcePages)}`;
+  };
+  const openEditor = () => {
+    const fresh:GeneratedArticle={ref:selectedBlock,title:"",translation:"",explanation:"",rashi:rashi.map(emptyComment),tosafot:tosafot.map(emptyComment),generatedAt:new Date().toISOString(),provider:"ChatGPT"};
+    if(isSpanningUnit){fresh.unitRef=unitRef;fresh.parts=unitSegments.map((part)=>({ref:part.id,translation:""}));fresh.pages=unitPages.map((entry)=>({ref:entry.ref,rashi:entry.rashi.map(emptyComment),tosafot:entry.tosafot.map(emptyComment)}));}
+    setDraft(activeGeneratedArticle || fresh);setImportText("");setEditorMessage("");setEditorOpen(true);
+  };
   const copyPrompt = async () => { try { await navigator.clipboard.writeText(promptForAI()); setCopied(true);setEditorMessage("");window.setTimeout(()=>setCopied(false),1800); } catch { setEditorMessage("Браузер не разрешил копирование. Выделите задание вручную."); } };
-  const parseImport = () => { try { const raw=JSON.parse(importText) as Record<string,unknown>; setDraft((current)=>({...current!,title:String(raw.title||""),translation:String(raw.translation||""),explanation:String(raw.explanation||""),rashi:Array.isArray(raw.rashi)?raw.rashi as GeneratedComment[]:current!.rashi,tosafot:Array.isArray(raw.tosafot)?raw.tosafot as GeneratedComment[]:current!.tosafot}));setEditorMessage("Ответ разобран. Проверьте и исправьте поля перед сохранением."); } catch { setEditorMessage("Не удалось разобрать JSON. Попросите AI ответить только JSON без оформления."); } };
+  const parseImport = () => { try { const raw=JSON.parse(importText) as Record<string,unknown>; setDraft((current)=>({...current!,title:String(raw.title||""),translation:String(raw.translation||""),explanation:String(raw.explanation||""),parts:Array.isArray(raw.parts)?raw.parts as GeneratedPart[]:current!.parts,pages:Array.isArray(raw.pages)?raw.pages as GeneratedPage[]:current!.pages,rashi:Array.isArray(raw.rashi)?raw.rashi as GeneratedComment[]:current!.rashi,tosafot:Array.isArray(raw.tosafot)?raw.tosafot as GeneratedComment[]:current!.tosafot}));setEditorMessage("Ответ разобран. Проверьте и исправьте поля перед сохранением."); } catch { setEditorMessage("Не удалось разобрать JSON. Попросите AI ответить только JSON без оформления."); } };
   const saveArticle = async () => { if(!draft)return; setSaving(true);setEditorMessage(""); try { const response=await fetch("/api/articles",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...draft,tractate:tractate.sefaria,ref:selectedBlock})}); const data=await response.json(); if(!response.ok)throw new Error(data.error||"Ошибка сохранения"); setGeneratedArticle({...data.article,generatedAt:data.article.updatedAt});setEditorOpen(false); } catch(reason){setEditorMessage(reason instanceof Error?reason.message:String(reason));} finally{setSaving(false);} };
   useEffect(() => {
     if (!selected || !blockLocated) return;
@@ -183,6 +238,9 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
           ref:selectedBlock,
           kind:selected.kind,
           original:selected.text,
+          unitRef,
+          parts:unitSegments.map((part)=>({ref:part.id,original:part.text})),
+          pages:unitPages.map((page)=>({ref:page.ref,rashi:page.rashi.map((item)=>({ref:item.ref,original:item.text})),tosafot:page.tosafot.map((item)=>({ref:item.ref,original:item.text}))})),
           rashi:rashi.map((item)=>({ref:item.ref,original:item.text})),
           tosafot:tosafot.map((item)=>({ref:item.ref,original:item.text})),
           outputRules:{language:"ru",translation:"точный, близкий к оригиналу",explanation:"краткое и ясное",originals:"никогда не генерировать"},
@@ -190,8 +248,18 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
       }, {signal:controller.signal});
       await context.registerTool({
         name:"show_generated_talmud_article",
-        description:`Показать в Daf-Ru готовые русский перевод и объяснение только для текущей реплики ${selectedBlock}. Оригиналы не принимаются: страница сохраняет оригиналы Sefaria.`,
-        inputSchema:{
+        description:isSpanningUnit?`Показать в Daf-Ru единый разбор составной реплики ${unitRef}, разделив перевод строго на части ${unitSegments.map(x=>x.id).join(" и ")}.`:`Показать в Daf-Ru готовые русский перевод и объяснение только для текущей реплики ${selectedBlock}. Оригиналы не принимаются: страница сохраняет оригиналы Sefaria.`,
+        inputSchema:isSpanningUnit?{
+          type:"object",
+          properties:{
+            ref:{type:"string",const:selectedBlock},
+            title:{type:"string"},
+            parts:{type:"array",items:{type:"object",properties:{ref:{type:"string"},translation:{type:"string"}},required:["ref","translation"],additionalProperties:false}},
+            explanation:{type:"string"},
+            pages:{type:"array",items:{type:"object",properties:{ref:{type:"string"},rashi:{type:"array",items:{type:"object",properties:{ref:{type:"string"},translation:{type:"string"},explanation:{type:"string"}},required:["ref","translation","explanation"],additionalProperties:false}},tosafot:{type:"array",items:{type:"object",properties:{ref:{type:"string"},translation:{type:"string"},explanation:{type:"string"}},required:["ref","translation","explanation"],additionalProperties:false}}},required:["ref","rashi","tosafot"],additionalProperties:false}},
+          },
+          required:["ref","title","parts","explanation","pages"],additionalProperties:false,
+        }:{
           type:"object",
           properties:{
             ref:{type:"string",const:selectedBlock,description:"Точный ref текущей реплики"},
@@ -214,6 +282,15 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
             if (!allowed.some((comment)=>comment.ref===ref)) return [];
             return [{ref,translation:String(item.translation || ""),explanation:String(item.explanation || "")}];
           }) : [];
+          if(isSpanningUnit){
+            const receivedParts=Array.isArray(input.parts)?input.parts as GeneratedPart[]:[];
+            const receivedPages=Array.isArray(input.pages)?input.pages as GeneratedPage[]:[];
+            if(unitSegments.some((part)=>!receivedParts.some((item)=>item.ref===part.id)))throw new Error("AI должен вернуть отдельный перевод каждой части составной реплики");
+            const currentPage=receivedPages.find((page)=>page.ref===selectedBlock);
+            const article:GeneratedArticle={ref:selectedBlock,title:String(input.title||"Разбор реплики"),translation:receivedParts.map(x=>x.translation).join(" "),explanation:String(input.explanation||""),unitRef,parts:receivedParts,pages:receivedPages,rashi:currentPage?.rashi||[],tosafot:currentPage?.tosafot||[],generatedAt:new Date().toISOString()};
+            setGeneratedArticle(article);
+            return {ok:true,shown:true,ref:selectedBlock,unitRef,message:"Составная статья показана. Перевод разделён по физической границе двух листов."};
+          }
           const article:GeneratedArticle = {
             ref:selectedBlock,
             title:String(input.title || "Разбор реплики"),
@@ -230,7 +307,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
     };
     register().catch(() => setSiteToolsAvailable(false));
     return () => controller.abort();
-  }, [blockLocated, selected, selectedBlock, tractate, rashi, tosafot]);
+  }, [blockLocated, selected, selectedBlock, tractate, rashi, tosafot, isSpanningUnit, unitRef, unitSegments, unitPages]);
 
   return <main>
     <header className="topbar"><div className="brand"><span className="brandMark">דף</span><span>Daf-Ru</span></div><div className="progress"><span>{tractate.ru}</span><strong>{daf}{side === "a" ? "а" : "б"}</strong><span className="status"><i/> Позиция сохранена</span></div><div className="account"><span title={user.email}>{user.name}</span><button className="iconButton" onClick={()=>setDictionaryOpen(true)} aria-label="Открыть словарь">⌘ <span>Словарь</span>{words.length>0&&<b>{words.length}</b>}</button></div></header>
@@ -241,11 +318,11 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
     </aside><article className="studyPane" onMouseUp={captureSelection}>
       <div className="studyNavigation"><div><span>{tractate.ru}</span><b>{daf}{side==="a"?"а":"б"}</b></div><nav aria-label="Соседние страницы">{nearbyPages.map((value)=><button key={value} className={value===pageKey?"active":""} disabled={value===pageKey} onClick={()=>choosePage(value)}>{value.replace("a","а").replace("b","б")}</button>)}</nav></div>
       {status!=="ready"||!blockLocated?<div className="studyWaiting"><span>{label}</span><h2>Связываем оригинальный лист с текстом Sefaria…</h2><p>Разбор появится после проверки соответствия реплик странице.</p></div>:<>
-      <section className="analysisCard gemaraCard"><button className="editArticleButton" onClick={openEditor}>{activeGeneratedArticle?"Редактировать":"Создать статью"}</button><div className="cardTitle"><span>{savedArticle?"01":"•"}</span><div><small>{selected?.kind.toUpperCase()} · {selectedBlock}</small><h2>{activeGeneratedArticle?.title || (savedArticle?"Почему необходимы оба случая?":"Разбор пока не сохранён")}</h2></div></div>{savedArticle&&!activeGeneratedArticle&&<div className="sourceBadge"><b>DAF-RU</b><span>редакционная версия</span><time>22.09.2026</time></div>}{activeGeneratedArticle&&<div className="sourceBadge aiBadge"><b>AI</b><span>{activeGeneratedArticle.provider||"AI"}</span><time>{new Date(activeGeneratedArticle.generatedAt).toLocaleString("ru-RU",{dateStyle:"short",timeStyle:"short"})}</time></div>}<div className="hebrew" lang="he" dir="rtl">{boldService(selected?.text||"")}</div>{activeGeneratedArticle?<><div className="rule"/><h3>Точный перевод</h3><p>{boldTranslationService(activeGeneratedArticle.translation)}</p><div className="explanation"><span>Объяснение</span><p>{activeGeneratedArticle.explanation}</p></div></>:savedArticle?<><div className="rule"/><h3>Точный перевод</h3><p>Они необходимы. Ведь если бы учили только о покупающем, я бы сказал: это потому, что он приводит её к святости. Но продающий, который выводит её из святости, — можно было бы сказать: оштрафуем его. Поэтому сообщается нам, что это не так.</p></>:<div className="explanation"><span>Источник</span><p>Проверенный оригинал из Sefaria. Нажмите «Создать статью».</p></div>}</section>
+      <section className="analysisCard gemaraCard"><button className="editArticleButton" onClick={openEditor}>{activeGeneratedArticle?"Редактировать":"Создать статью"}</button><div className="cardTitle"><span>{savedArticle?"01":"•"}</span><div><small>{selected?.kind.toUpperCase()} · {isSpanningUnit?unitSegments.map(x=>x.id).join(" + "):selectedBlock}</small><h2>{activeGeneratedArticle?.title || (savedArticle?"Почему необходимы оба случая?":"Разбор пока не сохранён")}</h2></div></div>{savedArticle&&!activeGeneratedArticle&&<div className="sourceBadge"><b>DAF-RU</b><span>редакционная версия</span><time>22.09.2026</time></div>}{activeGeneratedArticle&&<div className="sourceBadge aiBadge"><b>AI</b><span>{activeGeneratedArticle.provider||"AI"}</span><time>{new Date(activeGeneratedArticle.generatedAt).toLocaleString("ru-RU",{dateStyle:"short",timeStyle:"short"})}</time></div>}<div className={`spanningOriginal ${isSpanningUnit?"isSpanning":""}`}>{unitSegments.map((part)=><button type="button" key={part.id} className={`hebrew spanningPart ${part.id===selectedBlock?"active":"inactive"}`} lang="he" dir="rtl" disabled={part.id===selectedBlock} onClick={()=>openUnitPart(part.id)}><small>{part.id===selectedBlock?"НА ЭТОМ ЛИСТЕ":"СОСЕДНИЙ ЛИСТ"}</small>{boldService(part.text)}</button>)}</div>{activeGeneratedArticle?<><div className="rule"/><h3>Точный перевод</h3>{activeGeneratedArticle.parts?.length?<div className="spanningTranslation">{activeGeneratedArticle.parts.map((part)=><button type="button" key={part.ref} className={part.ref===selectedBlock?"active":"inactive"} disabled={part.ref===selectedBlock} onClick={()=>openUnitPart(part.ref)}><small>{part.ref}</small><span>{boldTranslationService(part.translation)}</span></button>)}</div>:<p>{boldTranslationService(activeGeneratedArticle.translation)}</p>}<div className="explanation"><span>Объяснение</span><p>{activeGeneratedArticle.explanation}</p></div></>:savedArticle?<><div className="rule"/><h3>Точный перевод</h3><p>Они необходимы. Ведь если бы учили только о покупающем, я бы сказал: это потому, что он приводит её к святости. Но продающий, который выводит её из святости, — можно было бы сказать: оштрафуем его. Поэтому сообщается нам, что это не так.</p></>:<div className="explanation"><span>Источник</span><p>Проверенный оригинал из Sefaria. Нажмите «Создать статью».</p></div>}</section>
       {rashi.length>0&&<><div className="commentaryHeading"><span>Раши к этой реплике</span><i>{rashi.length}</i></div>{rashi.map((item)=>{const article=activeGeneratedArticle?.rashi.find((entry)=>entry.ref===item.ref);return <section className="analysisCard sourceCommentCard rashiSourceCard" key={item.ref}><div className="commentMeta"><b>РАШИ</b><span>{item.ref}</span></div><div className="hebrew" lang="he" dir="rtl">{boldDibur(item.text,item.dibur)}</div>{article&&<><div className="rule"/><h3>Точный перевод</h3><p>{boldTranslatedDibur(article.translation)}</p><div className="explanation"><span>Объяснение</span><p>{article.explanation}</p></div></>}</section>})}</>}{tosafot.length>0&&<><div className="commentaryHeading tosafotHeading"><span>Тосафот к этой реплике</span><i>{tosafot.length}</i></div>{tosafot.map((item)=>{const article=activeGeneratedArticle?.tosafot.find((entry)=>entry.ref===item.ref);return <section className="analysisCard sourceCommentCard tosafotCard" key={item.ref}><div className="commentMeta"><b>ТОСАФОТ</b><span>{item.ref}</span></div><div className="hebrew" lang="he" dir="rtl">{boldDibur(item.text,item.dibur)}</div>{article&&<><div className="rule"/><h3>Точный перевод</h3><p>{boldTranslatedDibur(article.translation)}</p><div className="explanation"><span>Объяснение</span><p>{article.explanation}</p></div></>}</section>})}</>}{linked.length===0&&<div className="noCommentary">Sefaria не связывает с этой репликой комментарии Раши или Тосафот.</div>}</>}
     </article></section>
     {picked&&<button className="saveSelection" style={{left:picked.x,top:picked.y}} onMouseDown={(e)=>e.preventDefault()} onClick={saveWord}>＋ В словарь</button>}
     {dictionaryOpen&&<div className="drawerBackdrop" onClick={()=>setDictionaryOpen(false)}><aside className="drawer" onClick={(e)=>e.stopPropagation()}><div className="drawerHead"><div><small>ЛИЧНАЯ КОЛЛЕКЦИЯ</small><h2>Словарь</h2></div><button onClick={()=>setDictionaryOpen(false)}>×</button></div>{words.length?<div className="wordList">{words.map((word)=><div className="word" key={word}><span dir="rtl">{word}</span><small>{label}</small><button onClick={()=>{const next=words.filter((item)=>item!==word);setWords(next);localStorage.setItem("havruta-dictionary",JSON.stringify(next));}}>Удалить</button></div>)}</div>:<div className="empty"><b>Пока пусто</b><p>Выделите выражение и сохраните его.</p></div>}</aside></div>}
-    {editorOpen&&draft&&<div className="editorBackdrop"><section className="articleEditor"><div className="editorHead"><div><small>{tractate.ru} · {selectedBlock}</small><h2>Черновик статьи</h2></div><button onClick={()=>setEditorOpen(false)}>×</button></div><div className="editorSteps"><button className={copied?"copied":""} onClick={copyPrompt}>{copied?"✓ Задание скопировано":"1. Скопировать задание для AI"}</button><select value={draft.provider||"ChatGPT"} onChange={(e)=>setDraft({...draft,provider:e.target.value})}><option>ChatGPT</option><option>Claude</option><option>Gemini</option><option>Другой AI</option></select></div><label className="wideField"><span>2. Вставьте JSON-ответ AI</span><textarea value={importText} onChange={(e)=>setImportText(e.target.value)} placeholder='{"title":"…","translation":"…"}'/><button onClick={parseImport}>Разобрать ответ</button></label><div className="editorFields"><label><span>Заголовок</span><input value={draft.title} onChange={(e)=>setDraft({...draft,title:e.target.value})}/></label><label><span>Точный перевод</span><textarea value={draft.translation} onChange={(e)=>setDraft({...draft,translation:e.target.value})}/></label><label><span>Краткое объяснение</span><textarea value={draft.explanation} onChange={(e)=>setDraft({...draft,explanation:e.target.value})}/></label></div>{draft.rashi.map((item,index)=><div className="commentEdit" key={item.ref}><b>Раши · {item.ref}</b><textarea placeholder="Перевод" value={item.translation} onChange={(e)=>setDraft({...draft,rashi:draft.rashi.map((x,i)=>i===index?{...x,translation:e.target.value}:x)})}/><textarea placeholder="Объяснение" value={item.explanation} onChange={(e)=>setDraft({...draft,rashi:draft.rashi.map((x,i)=>i===index?{...x,explanation:e.target.value}:x)})}/></div>)}{draft.tosafot.map((item,index)=><div className="commentEdit" key={item.ref}><b>Тосафот · {item.ref}</b><textarea placeholder="Перевод" value={item.translation} onChange={(e)=>setDraft({...draft,tosafot:draft.tosafot.map((x,i)=>i===index?{...x,translation:e.target.value}:x)})}/><textarea placeholder="Объяснение" value={item.explanation} onChange={(e)=>setDraft({...draft,tosafot:draft.tosafot.map((x,i)=>i===index?{...x,explanation:e.target.value}:x)})}/></div>)}{editorMessage&&<p className="editorMessage">{editorMessage}</p>}<div className="editorActions"><button onClick={()=>setEditorOpen(false)}>Отмена</button><button className="primary" disabled={saving} onClick={saveArticle}>{saving?"Сохраняем…":"Сохранить статью"}</button></div></section></div>}
+    {editorOpen&&draft&&<div className="editorBackdrop"><section className="articleEditor"><div className="editorHead"><div><small>{tractate.ru} · {draft.unitRef||selectedBlock}</small><h2>{draft.parts?.length?"Одна статья для двух листов":"Черновик статьи"}</h2></div><button onClick={()=>setEditorOpen(false)}>×</button></div><div className="editorSteps"><button className={copied?"copied":""} onClick={copyPrompt}>{copied?"✓ Задание скопировано":"1. Скопировать задание для AI"}</button><select value={draft.provider||"ChatGPT"} onChange={(e)=>setDraft({...draft,provider:e.target.value})}><option>ChatGPT</option><option>Claude</option><option>Gemini</option><option>Другой AI</option></select></div><label className="wideField"><span>2. Вставьте JSON-ответ AI</span><textarea value={importText} onChange={(e)=>setImportText(e.target.value)} placeholder={draft.parts?.length?'{"title":"…","parts":[…],"pages":[…]}':'{"title":"…","translation":"…"}'}/><button onClick={parseImport}>Разобрать ответ</button></label><div className="editorFields"><label><span>Заголовок</span><input value={draft.title} onChange={(e)=>setDraft({...draft,title:e.target.value})}/></label>{draft.parts?.length?draft.parts.map((part,index)=><label key={part.ref}><span>Точный перевод части {part.ref}</span><textarea value={part.translation} onChange={(e)=>setDraft({...draft,parts:draft.parts!.map((x,i)=>i===index?{...x,translation:e.target.value}:x)})}/></label>):<label><span>Точный перевод</span><textarea value={draft.translation} onChange={(e)=>setDraft({...draft,translation:e.target.value})}/></label>}<label><span>Краткое объяснение всей реплики</span><textarea value={draft.explanation} onChange={(e)=>setDraft({...draft,explanation:e.target.value})}/></label></div>{draft.pages?.length?draft.pages.map((page,pageIndex)=><div className="pageCommentEdits" key={page.ref}><h3>Комментарии на листе · {page.ref}</h3>{page.rashi.map((item,index)=><div className="commentEdit" key={item.ref}><b>Раши · {item.ref}</b><textarea placeholder="Перевод" value={item.translation} onChange={(e)=>setDraft({...draft,pages:draft.pages!.map((p,pi)=>pi===pageIndex?{...p,rashi:p.rashi.map((x,i)=>i===index?{...x,translation:e.target.value}:x)}:p)})}/><textarea placeholder="Объяснение" value={item.explanation} onChange={(e)=>setDraft({...draft,pages:draft.pages!.map((p,pi)=>pi===pageIndex?{...p,rashi:p.rashi.map((x,i)=>i===index?{...x,explanation:e.target.value}:x)}:p)})}/></div>)}{page.tosafot.map((item,index)=><div className="commentEdit" key={item.ref}><b>Тосафот · {item.ref}</b><textarea placeholder="Перевод" value={item.translation} onChange={(e)=>setDraft({...draft,pages:draft.pages!.map((p,pi)=>pi===pageIndex?{...p,tosafot:p.tosafot.map((x,i)=>i===index?{...x,translation:e.target.value}:x)}:p)})}/><textarea placeholder="Объяснение" value={item.explanation} onChange={(e)=>setDraft({...draft,pages:draft.pages!.map((p,pi)=>pi===pageIndex?{...p,tosafot:p.tosafot.map((x,i)=>i===index?{...x,explanation:e.target.value}:x)}:p)})}/></div>)}</div>):<>{draft.rashi.map((item,index)=><div className="commentEdit" key={item.ref}><b>Раши · {item.ref}</b><textarea placeholder="Перевод" value={item.translation} onChange={(e)=>setDraft({...draft,rashi:draft.rashi.map((x,i)=>i===index?{...x,translation:e.target.value}:x)})}/><textarea placeholder="Объяснение" value={item.explanation} onChange={(e)=>setDraft({...draft,rashi:draft.rashi.map((x,i)=>i===index?{...x,explanation:e.target.value}:x)})}/></div>)}{draft.tosafot.map((item,index)=><div className="commentEdit" key={item.ref}><b>Тосафот · {item.ref}</b><textarea placeholder="Перевод" value={item.translation} onChange={(e)=>setDraft({...draft,tosafot:draft.tosafot.map((x,i)=>i===index?{...x,translation:e.target.value}:x)})}/><textarea placeholder="Объяснение" value={item.explanation} onChange={(e)=>setDraft({...draft,tosafot:draft.tosafot.map((x,i)=>i===index?{...x,explanation:e.target.value}:x)})}/></div>)}</>}{editorMessage&&<p className="editorMessage">{editorMessage}</p>}<div className="editorActions"><button onClick={()=>setEditorOpen(false)}>Отмена</button><button className="primary" disabled={saving} onClick={saveArticle}>{saving?"Сохраняем…":"Сохранить обе статьи"}</button></div></section></div>}
   </main>;
 }
