@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { canEdit, registerAndGetRole } from "../../roles";
 
 type Comment = { ref:string; translation:string; explanation:string };
 type Part = { ref:string; translation:string };
@@ -17,7 +18,6 @@ const parts = (value:unknown):Part[] => Array.isArray(value) ? value.slice(0,4).
 }) : [];
 
 export async function GET(request:Request) {
-  if(!await getChatGPTUser()) return Response.json({error:"Требуется вход"},{status:401});
   const url=new URL(request.url), tractate=text(url.searchParams.get("tractate"),100), ref=text(url.searchParams.get("ref"),100);
   if(!tractate||!ref) return Response.json({error:"Не указана реплика"},{status:400});
   const row=await env.DB.prepare("SELECT ref, title, translation, explanation, unit_ref, parts_json, rashi_json, tosafot_json, provider, created_at, updated_at FROM articles WHERE tractate = ? AND ref = ?").bind(tractate,ref).first<Record<string,string>>();
@@ -28,6 +28,7 @@ export async function GET(request:Request) {
 
 export async function POST(request:Request) {
   const user=await getChatGPTUser(); if(!user) return Response.json({error:"Требуется вход"},{status:401});
+  const role=await registerAndGetRole(user);if(!canEdit(role))return Response.json({error:"Создавать статьи может только редактор"},{status:403});
   const body=await request.json() as Record<string,unknown>;
   const tractate=text(body.tractate,100), ref=text(body.ref,100), title=text(body.title,300), translation=text(body.translation), explanation=text(body.explanation), provider=text(body.provider,40)||"AI";
   const now=new Date().toISOString(), articleParts=parts(body.parts), unitRef=text(body.unitRef,500);

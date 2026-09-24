@@ -60,8 +60,9 @@ type SiteTool = {
 };
 
 type ModelContext = { registerTool:(tool:SiteTool, options?:{signal?:AbortSignal})=>Promise<void> };
+type UserRole = "reader"|"editor"|"admin";
 
-export default function HomeClient({user}:{user:{name:string;email:string}}) {
+export default function HomeClient({user,signInHref,signOutHref}:{user:{name:string;email:string;role:UserRole}|null;signInHref:string;signOutHref:string}) {
   const [tractateTitle, setTractateTitle] = useState("Bekhorot");
   const [daf, setDaf] = useState(2);
   const [side, setSide] = useState<"a" | "b">("a");
@@ -87,6 +88,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
   const [copied, setCopied] = useState(false);
   const [landingEdge, setLandingEdge] = useState<"start"|"end">("start");
   const [boundaries, setBoundaries] = useState<BoundaryState>({joinsPrevious:false,joinsNext:false});
+  const canEditArticles=user?.role==="editor"||user?.role==="admin";
 
   const tractate = useMemo(() => tractateBySefaria(tractateTitle), [tractateTitle]);
   const pageKey = `${daf}${side}`;
@@ -212,6 +214,7 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
     return `${instruction}\nЭто одна реплика, физически рассечённая границей двух листов. Переведи её как единое целое, но верни отдельный перевод каждой части. Объяснение общее. Комментарии относятся только к своей странице.\nСхема: {"title":"...","parts":[{"ref":"${unitSegments[0].id}","translation":"..."},{"ref":"${unitSegments[1].id}","translation":"..."}],"explanation":"...","pages":[{"ref":"${unitSegments[0].id}","rashi":[],"tosafot":[]},{"ref":"${unitSegments[1].id}","rashi":[],"tosafot":[]}]}\n\nТрактат: ${tractate.ru}\nСоставная реплика: ${unitRef}\nЧасти Гемары: ${JSON.stringify(unitSegments.map(x=>({ref:x.id,original:x.text})))}\nКомментарии по страницам: ${JSON.stringify(sourcePages)}`;
   };
   const openEditor = () => {
+    if(!canEditArticles)return;
     const fresh:GeneratedArticle={ref:selectedBlock,title:"",translation:"",explanation:"",rashi:rashi.map(emptyComment),tosafot:tosafot.map(emptyComment),generatedAt:new Date().toISOString(),provider:"ChatGPT"};
     if(isSpanningUnit){fresh.unitRef=unitRef;fresh.parts=unitSegments.map((part)=>({ref:part.id,translation:""}));fresh.pages=unitPages.map((entry)=>({ref:entry.ref,rashi:entry.rashi.map(emptyComment),tosafot:entry.tosafot.map(emptyComment)}));}
     setDraft(activeGeneratedArticle || fresh);setImportText("");setEditorMessage("");setEditorOpen(true);
@@ -219,8 +222,9 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
   const copyPrompt = async () => { try { await navigator.clipboard.writeText(promptForAI()); setCopied(true);setEditorMessage("");window.setTimeout(()=>setCopied(false),1800); } catch { setEditorMessage("Браузер не разрешил копирование. Выделите задание вручную."); } };
   const parseImport = () => { try { const raw=JSON.parse(importText) as Record<string,unknown>; setDraft((current)=>({...current!,title:String(raw.title||""),translation:String(raw.translation||""),explanation:String(raw.explanation||""),parts:Array.isArray(raw.parts)?raw.parts as GeneratedPart[]:current!.parts,pages:Array.isArray(raw.pages)?raw.pages as GeneratedPage[]:current!.pages,rashi:Array.isArray(raw.rashi)?raw.rashi as GeneratedComment[]:current!.rashi,tosafot:Array.isArray(raw.tosafot)?raw.tosafot as GeneratedComment[]:current!.tosafot}));setEditorMessage("Ответ разобран. Проверьте и исправьте поля перед сохранением."); } catch { setEditorMessage("Не удалось разобрать JSON. Попросите AI ответить только JSON без оформления."); } };
   const saveArticle = async () => { if(!draft)return; setSaving(true);setEditorMessage(""); try { const response=await fetch("/api/articles",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...draft,tractate:tractate.sefaria,ref:selectedBlock})}); const data=await response.json(); if(!response.ok)throw new Error(data.error||"Ошибка сохранения"); setGeneratedArticle({...data.article,generatedAt:data.article.updatedAt});setEditorOpen(false); } catch(reason){setEditorMessage(reason instanceof Error?reason.message:String(reason));} finally{setSaving(false);} };
+  const openUsers=()=>{window.location.href="/admin";};
   useEffect(() => {
-    if (!selected || !blockLocated) return;
+    if (!selected || !blockLocated || !canEditArticles) return;
     const context = (document as Document & { modelContext?:ModelContext }).modelContext;
     if (typeof context?.registerTool !== "function") { setSiteToolsAvailable(false); return; }
     setSiteToolsAvailable(true);
@@ -307,10 +311,10 @@ export default function HomeClient({user}:{user:{name:string;email:string}}) {
     };
     register().catch(() => setSiteToolsAvailable(false));
     return () => controller.abort();
-  }, [blockLocated, selected, selectedBlock, tractate, rashi, tosafot, isSpanningUnit, unitRef, unitSegments, unitPages]);
+  }, [blockLocated, selected, selectedBlock, tractate, rashi, tosafot, isSpanningUnit, unitRef, unitSegments, unitPages, canEditArticles]);
 
-  return <main>
-    <header className="topbar"><div className="brand"><span className="brandMark">דף</span><span>Daf-Ru</span></div><div className="progress"><span>{tractate.ru}</span><strong>{daf}{side === "a" ? "а" : "б"}</strong><span className="status"><i/> Позиция сохранена</span></div><div className="account"><span title={user.email}>{user.name}</span><button className="iconButton" onClick={()=>setDictionaryOpen(true)} aria-label="Открыть словарь">⌘ <span>Словарь</span>{words.length>0&&<b>{words.length}</b>}</button></div></header>
+  return <main className={canEditArticles?"editorMode":"readerMode"}>
+    <header className="topbar"><div className="brand"><span className="brandMark">דף</span><span>Daf-Ru</span></div><div className="progress"><span>{tractate.ru}</span><strong>{daf}{side === "a" ? "а" : "б"}</strong><span className="status"><i/> Позиция сохранена</span></div><div className="account">{user?<><span title={user.email}>{user.name}</span>{user.role==="admin"&&<button className="iconButton" onClick={openUsers}>Пользователи</button>}<a className="accountLink" href={signOutHref} target="_top">Выйти</a></>:<a className="signInButton" href={signInHref} target="_top">Войти</a>}<button className="iconButton" onClick={()=>setDictionaryOpen(true)} aria-label="Открыть словарь">⌘ <span>Словарь</span>{words.length>0&&<b>{words.length}</b>}</button></div></header>
     <section className="workspace"><aside className="sourcePane dafPane" onPointerDown={()=>setPicked(null)}>
       <nav className="dafNavigation compactNavigation" aria-label="Навигация по Талмуду"><button disabled={isFirst} onClick={()=>move(-1)} aria-label="Предыдущая страница">←</button><label><select value={tractateTitle} aria-label="Трактат" onChange={(e)=>{setLandingEdge("start");setTractateTitle(e.target.value);setDaf(2);setSide("a");}}>{TRACTATES.map((item)=><option key={item.sefaria} value={item.sefaria}>{item.ru}</option>)}</select></label><label><select value={pageKey} aria-label="Страница" onChange={(e)=>choosePage(e.target.value)}>{pageOptions.map((value)=><option key={value} value={value}>{value.replace("a","а").replace("b","б")}</option>)}</select></label><button disabled={isLast} onClick={()=>move(1)} aria-label="Следующая страница">→</button><div className="zoomControls"><button onClick={()=>setZoom(v=>Math.max(.6,v-.15))} aria-label="Уменьшить">−</button><span>{Math.round(zoom*100)}%</span><button onClick={()=>setZoom(v=>Math.min(1.8,v+.15))} aria-label="Увеличить">+</button></div></nav>
       <div className="dafViewport">{status==="ready"?<PdfDafViewer zoom={zoom} selectedBlock={selectedBlock} landingEdge={landingEdge} onSelect={selectWord} onBlockLocated={located} pdfUrl={pdfUrl} label={label} segments={segments} commentary={comments}/>:<div className={`pageDataStatus ${status}`}>{status==="loading"?"Получаем лист и текст…":<><b>Не удалось загрузить лист</b><small>{error}</small></>}</div>}</div>
