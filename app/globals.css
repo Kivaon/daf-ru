@@ -26,14 +26,14 @@
 .aboutProjectButton{background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:6px;color:#e4ece7;padding:7px 10px;font-size:14px;white-space:nowrap;cursor:pointer}
 .aboutProjectButton:hover{background:rgba(255,255,255,.1)}
 .aboutProjectButton:focus-visible,.aboutProjectHeader button:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
-.aboutProjectDialog{position:fixed;inset:0;margin:auto;width:min(760px,calc(100vw - 32px));max-height:calc(100dvh - 40px);padding:0;border:1px solid var(--line);border-radius:12px;background:var(--cream);color:#24332f;box-shadow:0 20px 70px rgba(0,0,0,.3);overflow:auto;text-align:left}
+.aboutProjectDialog{position:fixed;inset:0;margin:auto;width:min(900px,calc(100vw - 32px));max-height:calc(100dvh - 40px);padding:0;border:1px solid var(--line);border-radius:12px;background:var(--cream);color:#24332f;box-shadow:0 20px 70px rgba(0,0,0,.3);overflow:auto;text-align:left}
 .aboutProjectDialog::backdrop{background:rgba(12,31,26,.65)}
 .aboutProjectHeader{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 32px;background:var(--cream);border-bottom:1px solid var(--line)}
 .aboutProjectHeader span{font:14px Georgia,serif;color:#986b30}
 .aboutProjectHeader h1{font:32px/1.2 Georgia,serif;color:var(--ink);margin:4px 0 0}
 .aboutProjectHeader button{flex-shrink:0;width:44px;height:44px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--ink);font-size:28px;cursor:pointer}
 .aboutProjectContent{padding:28px 32px 32px;font-size:16px;line-height:1.75}
-.aboutProjectContent .aboutProjectLead{margin:0 0 30px;padding:4px 0 4px 20px;border-left:3px solid var(--gold);font:24px/1.45 Georgia,serif;color:var(--ink)}
+.aboutProjectContent .aboutProjectLead{margin:28px 0 34px;padding:26px 30px;border-left:3px solid var(--gold);border-radius:0 8px 8px 0;background:#173f35;font:28px/1.45 Georgia,serif;color:#fbfaf6}
 .aboutProjectContent section+section{margin-top:28px}
 .aboutProjectContent h2{font:23px/1.35 Georgia,serif;color:var(--ink);margin:0 0 12px}
 .aboutProjectContent p{margin:0 0 12px}
@@ -42,3 +42,17 @@
 .aboutProjectContent li::marker{color:var(--gold)}
 .aboutProjectFooter{margin-top:28px;padding-top:20px;border-top:1px solid var(--line);color:#456356}
 @media(max-width:600px){.topbar{height:auto;min-height:60px;flex-wrap:wrap;gap:10px;padding:10px 14px}.topbar .account{flex-wrap:wrap;gap:10px}.aboutProjectDialog{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}.aboutProjectHeader{padding:16px 20px}.aboutProjectContent{padding:22px 20px}.aboutProjectContent .aboutProjectLead{font-size:22px}.aboutProjectHeader h1{font-size:28px}}
+
+.aboutProjectIntro{max-width:680px}
+.aboutProjectIntro p{font-size:18px;line-height:1.75}
+.aboutProjectColumns{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-bottom:32px}
+.aboutProjectColumns section+section{margin:0;padding-left:28px;border-left:1px solid var(--line)}
+.aboutProjectMaterials{padding:26px;background:#f0eee6;border:1px solid var(--line);border-radius:8px}
+.aboutProjectMaterials ul{display:grid;grid-template-columns:1fr 1fr;column-gap:32px;row-gap:8px}
+.aboutProjectMaterials p:last-child,.aboutProjectCommunity p:last-child{margin-bottom:0}
+.aboutProjectCommunity{padding:4px 0}
+.aboutProjectFooter>p{font:italic 18px/1.6 Georgia,serif;max-width:650px}
+.aboutProjectContact{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
+.aboutProjectContact span{font-size:14px;color:#5e7067}
+.aboutProjectContact a{color:var(--ink);text-decoration:underline;text-underline-offset:4px;overflow-wrap:anywhere;font-size:16px}
+@media(max-width:600px){.topbar .account{margin-left:auto;justify-content:flex-end}.aboutProjectColumns{grid-template-columns:1fr;gap:24px}.aboutProjectColumns section+section{padding:24px 0 0;border-left:0;border-top:1px solid var(--line)}.aboutProjectMaterials{padding:20px}.aboutProjectMaterials ul{grid-template-columns:1fr}.aboutProjectContent .aboutProjectLead{padding:22px;font-size:23px}.aboutProjectIntro p{font-size:16px}}
