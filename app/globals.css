@@ -23,7 +23,7 @@
 @media(max-width:800px){.topbar{padding:0 16px}.progress>span:first-child,.status,.iconButton span{display:none}.workspace{display:block}.sourcePane{border-right:0;border-bottom:1px solid #d2d0c5;padding:26px 18px}.dafPane{position:relative;top:0;height:74vh;padding:18px 14px}.verified{font-size:9px}.dafToolbar .hint{display:none}.dafSheet{min-width:520px}.pageGuide{display:none}.studyPane{padding:24px 14px 60px}.selectionBar{align-items:flex-start;gap:12px}.analysisCard{padding:24px 20px}.explanation{grid-template-columns:1fr;gap:6px}}
 
 /* About Daf-Ru: reuse the existing green, paper and gold palette. */
-.aboutProjectButton{background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:6px;color:#e4ece7;padding:7px 10px;font-size:14px;white-space:nowrap;cursor:pointer}
+.aboutProjectButton{background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:6px;color:#b8c2bd;padding:7px 10px;font-size:14px;white-space:nowrap;cursor:pointer}
 .aboutProjectButton:hover{background:rgba(255,255,255,.1)}
 .aboutProjectButton:focus-visible,.aboutProjectHeader button:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
 .aboutProjectDialog{position:fixed;inset:0;margin:auto;width:min(900px,calc(100vw - 32px));max-height:calc(100dvh - 40px);padding:0;border:1px solid var(--line);border-radius:12px;background:var(--cream);color:#24332f;box-shadow:0 20px 70px rgba(0,0,0,.3);overflow:auto;text-align:left}
@@ -37,7 +37,7 @@
 .aboutProjectContent section+section{margin-top:28px}
 .aboutProjectContent h2{font:23px/1.35 Georgia,serif;color:var(--ink);margin:0 0 12px}
 .aboutProjectContent p{margin:0 0 12px}
-.aboutProjectContent ul{margin:0 0 16px;padding-left:24px}
+.aboutProjectContent ul{list-style:disc outside;margin:0 0 16px;padding-left:24px}
 .aboutProjectContent li{padding-left:3px;margin:6px 0}
 .aboutProjectContent li::marker{color:var(--gold)}
 .aboutProjectFooter{margin-top:28px;padding-top:20px;border-top:1px solid var(--line);color:#456356}
