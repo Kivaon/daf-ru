@@ -30,29 +30,38 @@ export function assemblePrintArticles(segments:PrintSegment[], context:PrintSegm
 }
 
 const escapeHtml=(value:string)=>value.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]!));
-const paragraph=(text:string,hebrew=false)=>`<p${hebrew?' class="hebrew" lang="he" dir="rtl"':''}>${escapeHtml(text)}</p>`;
 const missing=(text:string)=>`<p class="missing">${text}</p>`;
-const stamp=(ref:string,enabled:boolean)=>enabled?`<div class="stamp">${escapeHtml(ref.replace(/(\d+)a/g,"$1а").replace(/(\d+)b/g,"$1б"))}</div>`:"";
-function renderBlock(article:PrintArticle,block:PrintBlock,stamps:boolean):string {
-  if(block==="original"||block==="translation") return article.parts.map(p=>`<div class="part">${stamp(p.ref,stamps)}${p[block]?paragraph(p[block],block==="original"):missing("[отсутствует]")}</div>`).join("");
-  if(block==="explanation") return stamp(article.ref,stamps)+(article.explanation?paragraph(article.explanation):missing("[отсутствует]"));
-  return article[block].length?article[block].map((c,index)=>`<section class="comment"><h4>Комментарий ${index+1}</h4>${stamp(c.base||article.ref,stamps)}${c.original?paragraph(c.original,true):missing("[отсутствует]")}${c.translation?`<h5>Перевод</h5>${stamp(c.base||article.ref,stamps)}${paragraph(c.translation)}`:missing("[отсутствует]")}<h5>Объяснение</h5>${stamp(c.base||article.ref,stamps)}${c.explanation?paragraph(c.explanation):missing("[отсутствует]")}</section>`).join(""):missing("[отсутствует]");
+const stamp=(ref:string,enabled:boolean)=>enabled?`<span class="stamp" dir="ltr">[${escapeHtml(ref.replace(/(\d+)a/g,"$1а").replace(/(\d+)b/g,"$1б"))}]</span> `:"";
+const sentence=(text:string)=>{
+  const value=text.trim().replace(/\s+/g," ");
+  if(!value)return '<span class="missing">[отсутствует]</span>';
+  // Preserve existing punctuation; only separate unpunctuated fragments.
+  return escapeHtml(value)+(/[.!?;:׃…][»”"')\]]*$/.test(value)?"":".");
+};
+function inlineBlock(article:PrintArticle,block:"original"|"translation"|"explanation",stamps:boolean):string {
+  if(block==="explanation")return stamp(article.ref,stamps)+sentence(article.explanation);
+  return article.parts.map(p=>stamp(p.ref,stamps)+sentence(p[block])).join(" ");
+}
+function flow(articles:PrintArticle[],block:PrintBlock,stamps:boolean):string {
+  if(block==="original"||block==="translation"||block==="explanation")return `<p class="flow${block==="original"?' hebrew':''}"${block==="original"?' lang="he" dir="rtl"':''}>${articles.map(a=>inlineBlock(a,block,stamps)).join(" ")}</p>`;
+  // Original Hebrew and Russian explanation stay separate for readable directionality.
+  return articles.map(a=>a[block].length?a[block].map(c=>`<div class="comment"><p class="flow hebrew" lang="he" dir="rtl">${stamp(c.base||a.ref,stamps)}${sentence(c.original)}</p><p class="flow">${stamp(c.base||a.ref,stamps)}${sentence(c.translation)} <span class="explanationLabel">Объяснение:</span> ${sentence(c.explanation)}</p></div>`).join(""):`<p class="flow">${stamp(a.ref,stamps)}<span class="missing">[отсутствует]</span></p>`).join("");
 }
 export function createPrintDocument(label:string,articles:PrintArticle[],settings:PrintSettings):string {
   const blocks=PRINT_BLOCKS.filter(b=>settings.blocks[b.key]);
   const paired=settings.pair&&settings.blocks.translation&&settings.blocks.explanation;
   const heading=(a:PrintArticle)=>`<h3>${escapeHtml(a.title)}</h3>`;
   const groups=blocks.filter(b=>!paired||b.key!=="explanation").map(b=>({key:b.key,label:paired&&b.key==="translation"?"Перевод и объяснение":b.label}));
-  const content=(a:PrintArticle,key:PrintBlock)=>paired&&key==="translation"?`<section class="paired"><h4>Перевод</h4>${renderBlock(a,"translation",settings.stamps)}<h4>Объяснение</h4>${renderBlock(a,"explanation",settings.stamps)}</section>`:renderBlock(a,key,settings.stamps);
+  const content=(items:PrintArticle[],key:PrintBlock)=>paired&&key==="translation"?`<p class="flow">${items.map(a=>`${inlineBlock(a,"translation",settings.stamps)} <span class="explanationLabel">Объяснение:</span> ${inlineBlock(a,"explanation",settings.stamps)}`).join(" ")}</p>`:flow(items,key,settings.stamps);
   let body="";
   if(blocks.length) {
-    if(settings.order==="articles") body=articles.map(a=>`<article>${heading(a)}${groups.map(b=>`<section><h4>${b.label}</h4>${content(a,b.key)}</section>`).join("")}</article>`).join("");
-    else body=groups.map(b=>`<section class="block"><h2>${b.label}</h2>${articles.map(a=>`<article>${heading(a)}${content(a,b.key)}</article>`).join("")}</section>`).join("");
+    if(settings.order==="articles") body=articles.map(a=>`<article>${heading(a)}${groups.map(b=>`<section><h4>${b.label}</h4>${content([a],b.key)}</section>`).join("")}</article>`).join("");
+    else body=groups.map(b=>`<section class="block"><h2>${b.label}</h2>${content(articles,b.key)}</section>`).join("");
   }
   const title=`Daf-Ru — ${label}`;
   const size=Math.max(12,Math.min(20,settings.fontSize));
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>
 @page{size:A4;margin:17mm 16mm 19mm;@bottom-left{content:"${escapeHtml(label).replace(/\\/g,"\\\\")}";font:9pt serif}@bottom-right{content:counter(page);font:9pt serif}}
-*{box-sizing:border-box}body{margin:0;background:#fff;color:#161616;font:${size}px/1.65 Georgia,"Times New Roman",serif}main{max-width:780px;margin:auto;padding:30px}header{border-bottom:2px solid #333;padding-bottom:16px;margin-bottom:24px}header p{font:13px/1.5 sans-serif;color:#444}h1{font-size:28px;margin:0 0 8px}h2{font-size:23px;border-bottom:1px solid #aaa;padding-bottom:8px}h3{font-size:19px}h4{font-size:16px}h5{font-size:14px}h2,h3,h4,h5{break-after:avoid;margin:18px 0 8px}h3 small,small{font:12px/1.5 sans-serif;color:#555}p{margin:8px 0 16px;white-space:pre-wrap;overflow-wrap:anywhere;orphans:3;widows:3}.hebrew{font-family:"Times New Roman",serif;font-size:1.25em;line-height:1.85;text-align:right}article{border-bottom:1px solid #ccc;padding-bottom:20px;margin-bottom:24px}.part,.paired{margin:14px 0}.paired{border-inline-start:2px solid #bbb;padding-inline-start:14px}.comment{margin:18px 0}.stamp{display:table;border:1px solid #bbb;border-radius:3px;padding:2px 7px;margin:10px 0 6px;font:11px/1.5 sans-serif;color:#555;break-after:avoid}.missing{font:italic 13px/1.6 sans-serif;color:#666}footer{border-top:1px solid #aaa;margin-top:24px;padding-top:12px;font:12px/1.5 sans-serif}@media print{main{max-width:none;padding:0}body{background:white}a{color:inherit;text-decoration:none}}@media(max-width:500px){main{padding:18px}}
+*{box-sizing:border-box}body{margin:0;background:#fff;color:#161616;font:${size}px/1.65 Georgia,"Times New Roman",serif}main{max-width:780px;margin:auto;padding:30px}header{border-bottom:2px solid #333;padding-bottom:16px;margin-bottom:24px}header p{font:13px/1.5 sans-serif;color:#444}h1{font-size:28px;margin:0 0 8px}h2{font-size:23px;border-bottom:1px solid #aaa;padding-bottom:8px}h3{font-size:19px}h4{font-size:16px}h5{font-size:14px}h2,h3,h4,h5{break-after:avoid;margin:18px 0 8px}h3 small,small{font:12px/1.5 sans-serif;color:#555}p{margin:8px 0 16px;white-space:pre-wrap;overflow-wrap:anywhere;orphans:3;widows:3}.hebrew{font-family:"Times New Roman",serif;font-size:1.25em;line-height:1.85;text-align:right}article{border-bottom:1px solid #ccc;padding-bottom:20px;margin-bottom:24px}.part,.paired{margin:14px 0}.paired{border-inline-start:2px solid #bbb;padding-inline-start:14px}.comment{margin:18px 0}.stamp{display:inline;unicode-bidi:isolate;white-space:nowrap;font:0.8em/1.5 sans-serif;color:#555}.flow{white-space:normal;text-align:justify}.explanationLabel{font-style:italic;color:#444}.missing{font:italic 13px/1.6 sans-serif;color:#666}footer{border-top:1px solid #aaa;margin-top:24px;padding-top:12px;font:12px/1.5 sans-serif}@media print{main{max-width:none;padding:0}body{background:white}a{color:inherit;text-decoration:none}}@media(max-width:500px){main{padding:18px}}
 </style></head><body><main><header><h1>${escapeHtml(title)}</h1><p>${settings.order==="articles"?"По статьям":"По блокам"} · ${blocks.map(b=>b.label).join(" · ")}${paired?" · Перевод и объяснение вместе":""}</p><p>Материалы выбранного листа. Продолжения составных статей включены с указанием ссылок на соседние листы.</p></header>${body||missing("Выберите хотя бы один блок.")}<footer>Daf-Ru · ${escapeHtml(label)} · Оригиналы: Sefaria. Переводы и пояснения: база Daf-Ru.<br>Материалы для подготовки к изучению с преподавателем или в хавруте.</footer></main></body></html>`;
 }

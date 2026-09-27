@@ -20,8 +20,8 @@ test('block order pairs translations with their explanations only when enabled',
 });
 test('stamps use only the short reference and can all be removed',()=>{
  const html=createPrintDocument('Бехорот 2а',articles,defaults);
- assert.match(html,/<div class="stamp">2а:1<\/div>/);
- assert.doesNotMatch(html,/<div class="stamp">Бехорот/);
+ assert.match(html,/<span class="stamp" dir="ltr">\[2а:1\]<\/span>/);
+ assert.doesNotMatch(html,/<span class="stamp"[^>]*>Бехорот/);
  assert.doesNotMatch(createPrintDocument('Бехорот 2а',articles,{...defaults,stamps:false}),/class="stamp"/);
 });
 test('saved text is escaped and missing data is explicit',()=>{
@@ -39,4 +39,11 @@ test('untranslated articles retain their original and use the agreed missing mar
  const built=assemblePrintArticles([{id:'2a:3',text:'ORIGINAL_UNTRANSLATED'}],[{id:'2a:3',text:'ORIGINAL_UNTRANSLATED'}],[{base:'2a:3',commentator:'Rashi',ref:'r',text:'RASHI_ORIGINAL'}],[null]);
  const html=createPrintDocument('Бехорот 2а',built,defaults);
  assert.match(html,/ORIGINAL_UNTRANSLATED/);assert.match(html,/RASHI_ORIGINAL/);assert.ok((html.match(/\[отсутствует\]/g)||[]).length>=4);
+});
+
+test('block mode flows homogeneous fragments without repeated article headings',()=>{
+ const html=createPrintDocument('Бехорот 2а',articles,{...defaults,order:'blocks',pair:false});
+ assert.doesNotMatch(html,/<h3>/);assert.doesNotMatch(html,/<article>/);
+ assert.match(html,/ORIGINAL_1\. <span class="stamp" dir="ltr">\[2а:2\]<\/span> ORIGINAL_2\./);
+ assert.match(html,/TRANSLATION_1\. <span class="stamp" dir="ltr">\[2а:2\]<\/span> TRANSLATION_2\./);
 });
