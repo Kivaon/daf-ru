@@ -81,3 +81,19 @@ test('Rashi and Tosafot retain dibur highlighting in original and translation',(
  assert.match(html,/<strong>Начальные слова<\/strong>/);assert.match(html,/<strong>Начало<\/strong>/);
  }
 });
+
+test('absent commentaries have no headings or missing placeholders in either layout',()=>{
+ const noComments=articles.map(a=>({...a,rashi:[],tosafot:[]}));
+ for(const order of ['articles','blocks'] as const){
+ const html=createPrintDocument('Бехорот 2а',noComments,{...defaults,order});
+ assert.doesNotMatch(html,/Раши|Тосафот/);assert.doesNotMatch(html,/\[отсутствует\]/);
+ }
+});
+test('commentary-only output skips empty articles and distinguishes absent content',()=>{
+ const input=[{...articles[0],rashi:[]},articles[1]];
+ const settings={...defaults,blocks:{original:false,translation:false,explanation:false,rashi:true,tosafot:false}};
+ const html=createPrintDocument('Бехорот 2а',input,settings);
+ assert.doesNotMatch(html,/Article 1/);assert.match(html,/Article 2/);
+ const empty=createPrintDocument('Бехорот 2а',[input[0]],settings);
+ assert.match(empty,/нет материалов выбранных блоков/);assert.doesNotMatch(empty,/<article>/);
+});
