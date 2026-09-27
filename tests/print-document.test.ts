@@ -55,3 +55,18 @@ test('paired explanations use parentheses, plain label and italic explanation te
  const unpaired=createPrintDocument('Бехорот 2а',[{...articles[0],rashi:[],tosafot:[]}],{...defaults,pair:false});
  assert.doesNotMatch(unpaired,/<em>EXPLANATION_1/);
 });
+
+test('article mode has exactly one reference stamp per article, including comments',()=>{
+ for(const pair of [true,false]){
+  const html=createPrintDocument('Бехорот 2а',articles,{...defaults,order:'articles',pair});
+  assert.equal((html.match(/class="stamp"/g)||[]).length,articles.length);
+  assert.match(html,/<article><span class="stamp" dir="ltr">\[2а:1\]<\/span> <h3>/);
+ }
+});
+test('paired block mode stamps translations but never repeats the stamp on explanations',()=>{
+ const html=createPrintDocument('Бехорот 2а',articles,{...defaults,order:'blocks',blocks:{original:false,translation:true,explanation:true,rashi:false,tosafot:false}});
+ assert.equal((html.match(/class="stamp"/g)||[]).length,articles.length);
+ assert.doesNotMatch(html,/\(<span class="stamp"/);
+ const comments=createPrintDocument('Бехорот 2а',articles,{...defaults,order:'blocks'});
+ assert.doesNotMatch(comments,/\(<span class="stamp"/);
+});

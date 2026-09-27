@@ -50,9 +50,10 @@ function flow(articles:PrintArticle[],block:PrintBlock,stamps:boolean):string {
 export function createPrintDocument(label:string,articles:PrintArticle[],settings:PrintSettings):string {
   const blocks=PRINT_BLOCKS.filter(b=>settings.blocks[b.key]);
   const paired=settings.pair&&settings.blocks.translation&&settings.blocks.explanation;
-  const heading=(a:PrintArticle)=>`<h3>${escapeHtml(a.title)}</h3>`;
+  const elementStamps=settings.stamps&&settings.order==="blocks";
+  const heading=(a:PrintArticle)=>`${stamp(a.ref,settings.stamps)}<h3>${escapeHtml(a.title)}</h3>`;
   const groups=blocks.filter(b=>!paired||b.key!=="explanation").map(b=>({key:b.key,label:paired&&b.key==="translation"?"Перевод и объяснение":b.label}));
-  const content=(items:PrintArticle[],key:PrintBlock)=>paired&&key==="translation"?`<p class="flow">${items.map(a=>`${inlineBlock(a,"translation",settings.stamps)} (${stamp(a.ref,settings.stamps)}<span class="explanationLabel">Объяснение:</span> <em>${sentence(a.explanation)}</em>)`).join(" ")}</p>`:flow(items,key,settings.stamps);
+  const content=(items:PrintArticle[],key:PrintBlock)=>paired&&key==="translation"?`<p class="flow">${items.map(a=>`${inlineBlock(a,"translation",elementStamps)} (<span class="explanationLabel">Объяснение:</span> <em>${sentence(a.explanation)}</em>)`).join(" ")}</p>`:flow(items,key,elementStamps);
   let body="";
   if(blocks.length) {
     if(settings.order==="articles") body=articles.map(a=>`<article>${heading(a)}${groups.map(b=>`<section><h4>${b.label}</h4>${content([a],b.key)}</section>`).join("")}</article>`).join("");
