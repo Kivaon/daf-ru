@@ -70,3 +70,14 @@ test('paired block mode stamps translations but never repeats the stamp on expla
  const comments=createPrintDocument('Бехорот 2а',articles,{...defaults,order:'blocks'});
  assert.doesNotMatch(comments,/\(<span class="stamp"/);
 });
+
+test('Rashi and Tosafot retain dibur highlighting in original and translation',()=>{
+ const segments=[{id:'2a:3',text:'גמרא'}];
+ const saved:SavedPrintArticle={ref:'2a:3',title:'Title',translation:'Translation',explanation:'Explanation',rashi:[{ref:'r',translation:'«Начальные слова» — перевод.',explanation:'Explanation'}],tosafot:[{ref:'t',translation:'Начало — продолжение.',explanation:'Explanation'}]};
+ const result=assemblePrintArticles(segments,segments,[{base:'2a:3',commentator:'Rashi',ref:'r',text:'דיבור ראשון - המשך',dibur:'דיבור ראשון'},{base:'2a:3',commentator:'Tosafot',ref:'t',text:'דיבור שני - המשך',dibur:'דיבור שני'}],[saved]);
+ for(const order of ['articles','blocks'] as const){
+ const html=createPrintDocument('Бехорот 2а',result,{...defaults,order});
+ assert.match(html,/<strong>דיבור ראשון<\/strong>/);assert.match(html,/<strong>דיבור שני<\/strong>/);
+ assert.match(html,/<strong>Начальные слова<\/strong>/);assert.match(html,/<strong>Начало<\/strong>/);
+ }
+});

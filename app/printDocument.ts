@@ -7,8 +7,8 @@ export type PrintSettings = {blocks: Record<PrintBlock,boolean>; order:"articles
 export type SavedPrintComment = {ref:string;translation:string;explanation:string};
 export type SavedPrintArticle = {ref:string;title:string;translation:string;explanation:string;unitRef?:string;parts?:{ref:string;translation:string}[];rashi:SavedPrintComment[];tosafot:SavedPrintComment[];pages?:{ref:string;rashi:SavedPrintComment[];tosafot:SavedPrintComment[]}[]};
 export type PrintSegment = {id:string;text:string};
-export type PrintComment = {base:string;commentator:"Rashi"|"Tosafot";ref:string;text:string};
-export type PrintArticle = {ref:string;title:string;parts:{ref:string;original:string;translation:string}[];explanation:string;rashi:(SavedPrintComment & {original:string;base?:string})[];tosafot:(SavedPrintComment & {original:string;base?:string})[]};
+export type PrintComment = {base:string;commentator:"Rashi"|"Tosafot";ref:string;text:string;dibur?:string};
+export type PrintArticle = {ref:string;title:string;parts:{ref:string;original:string;translation:string}[];explanation:string;rashi:(SavedPrintComment & {original:string;base?:string;dibur?:string})[];tosafot:(SavedPrintComment & {original:string;base?:string;dibur?:string})[]};
 
 export function assemblePrintArticles(segments:PrintSegment[], context:PrintSegment[], comments:PrintComment[], saved:(SavedPrintArticle|null)[]):PrintArticle[] {
   const seen = new Set<string>();
@@ -23,7 +23,7 @@ export function assemblePrintArticles(segments:PrintSegment[], context:PrintSegm
       const translations=article?.pages?.length ? article.pages.flatMap(p=>p[kind]||[]) : article?.[kind]||[];
       const originals=comments.filter(c=>refs.has(c.base)&&c.commentator===(kind==="rashi"?"Rashi":"Tosafot"));
       const allRefs=[...new Set([...originals.map(c=>c.ref),...translations.map(c=>c.ref)])];
-      return allRefs.map(ref=>({ref,base:originals.find(c=>c.ref===ref)?.base||article?.pages?.find(p=>p[kind]?.some(c=>c.ref===ref))?.ref||segment.id,original:originals.find(c=>c.ref===ref)?.text||"",translation:translations.find(c=>c.ref===ref)?.translation||"",explanation:translations.find(c=>c.ref===ref)?.explanation||""}));
+      return allRefs.map(ref=>({ref,dibur:originals.find(c=>c.ref===ref)?.dibur,base:originals.find(c=>c.ref===ref)?.base||article?.pages?.find(p=>p[kind]?.some(c=>c.ref===ref))?.ref||segment.id,original:originals.find(c=>c.ref===ref)?.text||"",translation:translations.find(c=>c.ref===ref)?.translation||"",explanation:translations.find(c=>c.ref===ref)?.explanation||""}));
     };
     return [{ref:parts.map(p=>p.ref).join(" + "),title:article?.title||`Фрагмент ${index+1}`,parts,explanation:article?.explanation||"",rashi:collect("rashi"),tosafot:collect("tosafot")}];
   });
@@ -38,6 +38,22 @@ const sentence=(text:string)=>{
   // Preserve existing punctuation; only separate unpunctuated fragments.
   return escapeHtml(value)+(/[.!?;:׃…][»”"')\]]*$/.test(value)?"":".");
 };
+function originalComment(text:string,dibur?:string):string {
+  const rendered=sentence(text);
+  const opening=dibur?.trim().replace(/\s+/g," ");
+  if(!opening)return rendered;
+  const escaped=escapeHtml(opening), at=rendered.indexOf(escaped);
+  return at<0?rendered:rendered.slice(0,at)+`<strong>${escaped}</strong>`+rendered.slice(at+escaped.length);
+}
+function translatedComment(text:string):string {
+  const quoted=text.match(/^\s*[«"](.+?)[»"]\s*([—–\-:]?)\s*/);
+  if(quoted){
+    const normalized=quoted[1]+(quoted[2]?` ${quoted[2]} `:" ")+text.slice(quoted[0].length);
+    return originalComment(normalized,quoted[1]);
+  }
+  const opening=text.match(/^\s*(.+?)\s+([—–-])\s+/);
+  return originalComment(text,opening?.[1]);
+}
 function inlineBlock(article:PrintArticle,block:"original"|"translation"|"explanation",stamps:boolean):string {
   if(block==="explanation")return stamp(article.ref,stamps)+sentence(article.explanation);
   return article.parts.map(p=>stamp(p.ref,stamps)+sentence(p[block])).join(" ");
@@ -45,7 +61,7 @@ function inlineBlock(article:PrintArticle,block:"original"|"translation"|"explan
 function flow(articles:PrintArticle[],block:PrintBlock,stamps:boolean):string {
   if(block==="original"||block==="translation"||block==="explanation")return `<p class="flow${block==="original"?' hebrew':''}"${block==="original"?' lang="he" dir="rtl"':''}>${articles.map(a=>inlineBlock(a,block,stamps)).join(" ")}</p>`;
   // Original Hebrew and Russian explanation stay separate for readable directionality.
-  return articles.map(a=>a[block].length?a[block].map(c=>`<div class="comment"><p class="flow hebrew" lang="he" dir="rtl">${stamp(c.base||a.ref,stamps)}${sentence(c.original)}</p><p class="flow">${stamp(c.base||a.ref,stamps)}${sentence(c.translation)} (<span class="explanationLabel">Объяснение:</span> <em>${sentence(c.explanation)}</em>)</p></div>`).join(""):`<p class="flow">${stamp(a.ref,stamps)}<span class="missing">[отсутствует]</span></p>`).join("");
+  return articles.map(a=>a[block].length?a[block].map(c=>`<div class="comment"><p class="flow hebrew" lang="he" dir="rtl">${stamp(c.base||a.ref,stamps)}${originalComment(c.original,c.dibur)}</p><p class="flow">${stamp(c.base||a.ref,stamps)}${translatedComment(c.translation)} (<span class="explanationLabel">Объяснение:</span> <em>${sentence(c.explanation)}</em>)</p></div>`).join(""):`<p class="flow">${stamp(a.ref,stamps)}<span class="missing">[отсутствует]</span></p>`).join("");
 }
 export function createPrintDocument(label:string,articles:PrintArticle[],settings:PrintSettings):string {
   const blocks=PRINT_BLOCKS.filter(b=>settings.blocks[b.key]);
