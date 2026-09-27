@@ -52,7 +52,7 @@ export default function PrintPage({tractate,label,segments,context,comments,read
   };
   const enabled=!busy&&!error&&articles.length>0&&hasBlocks;
   return <>
-    <button type="button" className="printPageButton" disabled={!ready} onClick={open}>Печать и файл</button>
+    <button type="button" className="printPageButton" disabled={!ready} onClick={open} title="Экспорт материалов: печать и файл" aria-label="Экспорт материалов: печать и файл"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 10H3v11h18V10h-2M12 15V3M8 7l4-4 4 4"/></svg></button>
     <dialog ref={dialog} className="printPageDialog" aria-labelledby="print-page-title" onClose={close}>
       <header className="printPageHeader"><div><small>{label}</small><h2 id="print-page-title">Печать и сохранение</h2></div><button type="button" autoFocus onClick={()=>dialog.current?.close()} aria-label="Закрыть настройки печати">×</button></header>
       <div className="printPageLayout">

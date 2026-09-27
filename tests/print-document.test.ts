@@ -47,3 +47,11 @@ test('block mode flows homogeneous fragments without repeated article headings',
  assert.match(html,/ORIGINAL_1\. <span class="stamp" dir="ltr">\[2а:2\]<\/span> ORIGINAL_2\./);
  assert.match(html,/TRANSLATION_1\. <span class="stamp" dir="ltr">\[2а:2\]<\/span> TRANSLATION_2\./);
 });
+
+test('paired explanations use parentheses, plain label and italic explanation text',()=>{
+ const html=createPrintDocument('Бехорот 2а',articles,{...defaults,stamps:false});
+ assert.match(html,/\(<span class="explanationLabel">Объяснение:<\/span> <em>EXPLANATION_1\.<\/em>\)/);
+ assert.match(html,/explanationLabel\{font-style:normal;font-weight:normal/);
+ const unpaired=createPrintDocument('Бехорот 2а',[{...articles[0],rashi:[],tosafot:[]}],{...defaults,pair:false});
+ assert.doesNotMatch(unpaired,/<em>EXPLANATION_1/);
+});
