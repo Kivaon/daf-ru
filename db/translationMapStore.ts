@@ -1,4 +1,5 @@
-import {pageProgress} from '../app/translationMapModel.ts';
+import {printedRefs} from '../app/printedSources.ts';
+import {pageProgress,printedProgress} from '../app/translationMapModel.ts';
 import type {Requirement} from '../app/translationMapModel.ts';
 import type {SavedRow} from '../app/batchModel.ts';
 import {loadBundle} from '../app/batchSources.ts';
@@ -13,7 +14,7 @@ export async function mapProgress(db:D1Database,tractate:string,pages:Record<str
  ]);
  const requirements=new Map<string,Requirement>();for(const cache of caches.results)for(const item of JSON.parse(cache.requirements_json) as Requirement[])requirements.set(item.ref,item);
  const draftRefs=new Set(drafts.results.map(r=>r.ref));
- const result=allPages.map(page=>pageProgress(page,pages[page],articles.results,draftRefs,requirements));
+ const result=allPages.map(page=>printedProgress(pageProgress(page,pages[page],articles.results,draftRefs,requirements),printedRefs(tractate,page),articles.results));
  const needed=[...new Set(articles.results.filter(r=>pages[r.ref.split(':')[0]]&&!requirements.has(r.ref)).map(r=>r.ref.split(':')[0]))];
  return {pages:result,pendingPages:needed};
 }

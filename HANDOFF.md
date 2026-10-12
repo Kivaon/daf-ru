@@ -73,8 +73,17 @@ Release confirmed: live version 74, commit 3fe2568b83c192b2514f7e67fe98fdb374968
 
 Sender changed at user request to kivaon@gmail.com; both sender addresses confirmed by user. Recipient remains pitronot@proton.me. Test campaign connection-test-gmail-v2 permits one fresh test without replaying existing article notifications. Prior inbox delivery NOT confirmed: user only found activation messages.
 
-Gmail sender release: version 75 live, commit 4459664349ad2cf432a887c915729ba580294ee9. Four mail tests, typecheck and build passed. Production test from kivaon@gmail.com to pitronot@proton.me accepted by Mailjet; inbox receipt still unconfirmed. Subject: DAF-RU — тест отправки с Gmail.
+## 2026-10-10 — phone smart-quote recovery
 
-2026-10-10: phone quote fix v76 deployed, commit e9ef95c61c767a5748a1932e96202172320a0dca. Scoped patch synced here preserving other WIP. Full verification record in work/daf-ru-quotes-release/HANDOFF.md. Deferred geometry work remains unpublished.
+Release prepared from live v75 in work/daf-ru-quotes-release. Deferred Sefaria/geometry WIP remains in work/daf-ru-parser-release and is NOT included.
 
-2026-10-10: v77 combined copy/paste recovery deployed, 9e4143fbffb8f4cb352c1c6c1789f256244cb135; scoped changes synced preserving deferred WIP. 61 tests, typecheck and build passed.
+Root cause: old parser only opened smart strings with “ and closed with ”. The phone response opens two translation values with ”. Recovery ran but failed; readModelResponse then reported the original input at column 2. Existing parser now recognizes either glyph at token boundaries and preserves internal paired smart quotes, guillemets and ASCII escapes. Strict JSON still returns before recovery.
+
+Batch paste and old-draft adoption normalize recovered raw once before autosave, so reopening does not reapply raw over manual edits. Single import also uses the same readModelResponse → parseModelResponse → importDraft path.
+
+Verification: 55 tests pass, typecheck passes. Exact tests/fixtures/chullin-105b-phone.txt passes parsing, schema, draft save/reopen and changeBatch publication. Local browser with actual Sefaria Chullin 105b: pasted exact fixture into item 9, all fields populated, clicked Save and next; status Ready, 1/19, moved to item 10. GET /api/articles confirms exact title/translation and two Rashi, zero Tosafot. Single-ref database storage flattens parts into translation (existing behavior), while parsed response retains parts.length=1 and pages.length=1. QA used isolated local DB only.
+
+Published v76, succeeded, commit e9ef95c61c767a5748a1932e96202172320a0dca. Production build passed.
+
+## 2026-10-10 — combined copy/paste recovery
+Existing recovery now composes BOM/fence cleanup, outside-string whitespace normalization, smart quotes and safe closing suffix. Existing diagnostics walker rejects duplicate fields before import and identifies invisible syntax characters with code/position. Batch recovery notice is generalized. 61 tests and typecheck pass, including original and damaged Chullin fixtures through schema, draft save/reopen and real changeBatch publication with isolated SQLite. No new browser run in this follow-up; prior v76 UI path remains unchanged apart from notification wording. Deferred geometry WIP excluded.

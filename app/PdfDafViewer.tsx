@@ -28,7 +28,7 @@ const glyphs: Record<string, string> = {
   "Î":"כ", "Í":"ך", "Ï":"ל", "Ó":"מ", "Ì":"ם", "\u0005":"נ", "\b":"נ", "\u0010":"נ", "\u0011":"נ", "\u0012":"נ", "\u0014":"נ", "Ô":"ן", "Ò":"ס", "Ú":"ע", "Ù":"פ",
   "Û":"ף", "ˆ":"צ", "ı":"ץ", "˜":"ק", "¯":"ר", "˘":"ש", "˙":"ת",
 };
-const decodeWord = (raw: string) => Array.from(raw).map((char) => glyphs[char] ?? char).reverse().join("").replace("'", "׳");
+const decodeWord = (raw: string) => /[א-ת]/.test(raw)?raw:Array.from(raw).map((char) => glyphs[char] ?? (char.charCodeAt(0)>=0xe0&&char.charCodeAt(0)<=0xfa?String.fromCharCode(0x5d0+char.charCodeAt(0)-0xe0):char==='\u0004'?'נ':char)).reverse().join("").replace("'", "׳");
 const normalizeHebrew = (text: string) => text.normalize("NFD").replace(/[\u0591-\u05C7]/g, "").replace(/[^\u05D0-\u05EA]/g, "");
 
 function editionWords(text: string) {
@@ -315,12 +315,19 @@ export function PdfDafViewer({ zoom, selectedBlock, landingEdge = "start", onSel
           if (hebrewLength) gemaraFontScores.set(item.fontName, (gemaraFontScores.get(item.fontName) ?? 0) + hebrewLength);
         });
         const gemaraFont = [...gemaraFontScores].sort((first, second) => second[1] - first[1])[0]?.[0];
-        if (!gemaraFont) throw new Error("PDF не содержит распознаваемого слоя текста Гемары");
+        
         const gemaraHeights = items
           .filter((item) => item.fontName === gemaraFont && isOnPage(item))
           .map((item) => item.height)
           .sort((first, second) => first - second);
-        const gemaraHeight = gemaraHeights[Math.floor(gemaraHeights.length / 2)];
+        let gemaraHeight = gemaraHeights[Math.floor(gemaraHeights.length / 2)]||13.7;
+        // Rank actual size groups against Sefaria, not the longest printed commentary.
+        if(segments.length){const source=new Set(segments.flatMap(s=>editionWords(s.text)).filter(w=>w.length>=3));let best=-1;
+         for(const height of new Set(items.filter(isOnPage).filter(i=>i.height>=10).map(i=>Math.round(i.height*10)/10))){
+          const words=makeWords(i=>isOnPage(i)&&Math.abs(i.height-height)<.3).map(w=>normalizeHebrew(w.word));const matched=new Set(words.filter(w=>source.has(w)));const score=matched.size/(source.size||1)*matched.size/Math.max(words.length,1);
+          if(score>best){best=score;gemaraHeight=height;}
+         }
+        }
         // A Vilna line can cross several embedded PDF font subsets when the
         // Gemara column widens or narrows around Rashi/Tosafot. Those subsets
         // have different fontName values but the same printed letter height.
@@ -328,11 +335,11 @@ export function PdfDafViewer({ zoom, selectedBlock, landingEdge = "start", onSel
         // such bends, so collect the complete printed Gemara size instead.
         const pdfWords = makeWords((item) => isOnPage(item) && Math.abs(item.height - gemaraHeight) <= .8);
         const openingCandidates = makeWords((item) => item.transform[4] > 55 && item.transform[4] < 550 && isOnPage(item) && item.height >= 10.5);
-        const rashiWords = makeWords((item) => item.transform[4] > 400 && isOnPage(item));
-        const tosafotWords = makeWords((item) => item.transform[4] < 212 && isOnPage(item));
+        const rashiWords = makeWords((item) => isOnPage(item));
+        const tosafotWords = makeWords((item) => isOnPage(item));
         let locatedBlocks: Record<string, LocatedBlock> = {}, locatedCommentary: Record<string, LocatedBlock> = {}, mappingError = "", mappingNotice = "";
         try {
-          const alignment = alignSefariaToPdf(pdfWords, segments);
+          const alignment = segments.length?alignSefariaToPdf(pdfWords, segments):{blocks:{},warnings:[]};
           locatedBlocks = addOpeningWords(alignment.blocks, openingCandidates, segments, zoom);
           mappingNotice = alignment.warnings.join(" · ");
           locatedCommentary = {
