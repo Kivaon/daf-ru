@@ -19,3 +19,31 @@ export const users = sqliteTable("users", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [uniqueIndex("users_user_id_unique").on(table.userId)]);
+
+// Private editorial queues; never returned from the public articles API.
+export const batches = sqliteTable('editor_batches', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  tractate: text('tractate').notNull(),
+  page: text('page').notNull(),
+  stateJson: text('state_json').notNull(),
+  revision: integer('revision').notNull().default(0),
+  writeToken: text('write_token').notNull().default(''),
+  updatedAt: text('updated_at').notNull(),
+}, table=>[uniqueIndex('editor_batches_owner_page').on(table.userId,table.tractate,table.page)]);
+
+// Source-only completeness requirements. No editor or translation content.
+export const mapSources = sqliteTable('translation_map_sources', {
+  tractate: text('tractate').notNull(),
+  page: text('page').notNull(),
+  requirementsJson: text('requirements_json').notNull(),
+  fetchedAt: text('fetched_at').notNull(),
+}, table=>[uniqueIndex('translation_map_sources_page').on(table.tractate,table.page)]);
+
+// Durable first-completion notifications, including the state before the first save.
+export const mailJobs = sqliteTable('mail_jobs', {
+ id:text('id').primaryKey(), tractate:text('tractate').notNull(), refsJson:text('refs_json').notNull(),
+ beforeJson:text('before_json').notNull(), status:text('status').notNull().default('pending'),
+ nextAt:integer('next_at').notNull().default(0), attempts:integer('attempts').notNull().default(0),
+ lease:text('lease'), messageId:text('message_id'), error:text('error'), createdAt:text('created_at').notNull(),
+});

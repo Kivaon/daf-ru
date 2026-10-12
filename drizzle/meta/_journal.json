@@ -8,6 +8,27 @@
       "when": 1790170580703,
       "tag": "0000_amused_newton_destine",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791142745473,
+      "tag": "0003_editor_batches",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791211159126,
+      "tag": "0004_flashy_zaladane",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1791236261061,
+      "tag": "0005_amazing_pet_avengers",
+      "breakpoints": true
     }
   ]
 }
