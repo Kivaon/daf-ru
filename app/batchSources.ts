@@ -17,7 +17,7 @@ export async function loadBundle(tractate:string,page:string):Promise<Bundle>{
 
  return {page,parts,he:davidson.he.map(text),en:davidson.text.map(text)};
 }
-export function continues(left:Bundle,right:Bundle){const ends=(s:string)=>/[.!?׃։][\s"'׳״’”)]*$/.test(s);return !!(left.he.at(-1)&&right.he[0]&&left.en.at(-1)&&right.en[0]&&!ends(left.he.at(-1)!)&&!ends(left.en.at(-1)!)&&/^[^A-Za-z]*[a-z]/.test(right.en[0]));}
+export function continues(left:Bundle,right:Bundle){const ends=(s:string)=>/[.!?׃։][\s"'׳״’”)]*$/.test(s);return !!(left.parts.length&&right.parts.length&&left.he.at(-1)&&right.he[0]&&left.en.at(-1)&&right.en[0]&&!ends(left.he.at(-1)!)&&!ends(left.en.at(-1)!)&&/^[^A-Za-z]*[a-z]/.test(right.en[0]));}
 export function buildUnits(tractate:string,current:Bundle,bundles:Bundle[],rows:SavedRow[]):Unit[]{
  const all=bundles.flatMap(b=>b.parts),groups=new Map(all.map(p=>[p.ref,new Set([p.ref])]));
  const join=(refs:string[])=>{const combined=new Set<string>();for(const ref of refs){const group=groups.get(ref);if(!group)throw new Error(`Для составной статьи не получен оригинал ${ref}`);group.forEach(r=>combined.add(r));}combined.forEach(ref=>groups.set(ref,combined));};

@@ -282,7 +282,8 @@ export function PdfDafViewer({ zoom, selectedBlock, landingEdge = "start", onSel
         };
         const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: zoom });
-        const textContent = await page.getTextContent();
+        let textLayerError = "";
+        const textContent = await page.getTextContent().catch(() => {textLayerError = "Не удалось прочитать текстовый слой PDF. Используйте выбор реплики Sefaria."; return {items:[] as Array<Record<string,unknown>>,styles:{}};});
         const items = textContent.items.filter((item): item is typeof item & { str: string; transform: number[]; width: number; height: number; fontName: string } => "str" in item && "fontName" in item);
         const [a, b, c, d, e, f] = viewport.transform;
         const toViewport = (x: number, y: number) => ({ x: a * x + c * y + e, y: b * x + d * y + f });
@@ -315,7 +316,7 @@ export function PdfDafViewer({ zoom, selectedBlock, landingEdge = "start", onSel
           if (hebrewLength) gemaraFontScores.set(item.fontName, (gemaraFontScores.get(item.fontName) ?? 0) + hebrewLength);
         });
         const gemaraFont = [...gemaraFontScores].sort((first, second) => second[1] - first[1])[0]?.[0];
-        
+
         const gemaraHeights = items
           .filter((item) => item.fontName === gemaraFont && isOnPage(item))
           .map((item) => item.height)
@@ -360,7 +361,7 @@ export function PdfDafViewer({ zoom, selectedBlock, landingEdge = "start", onSel
         if (!context) throw new Error("Canvas unavailable");
         const task = page.render({ canvas, canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0] });
         renderTaskRef.current = task; await task.promise;
-        if (!cancelled) { setStatus("ready"); setAlignmentWarning(mappingError || mappingNotice); if (!mappingError) { const available=Object.keys(locatedBlocks); onBlockLocated(locatedBlocks[selectedBlock] ? selectedBlock : (landingEdge==="end" ? available.at(-1) : available[0])); } }
+        if (!cancelled) { setStatus("ready"); setAlignmentWarning(textLayerError || mappingError || mappingNotice); if (!mappingError) { const available=Object.keys(locatedBlocks); onBlockLocated(locatedBlocks[selectedBlock] ? selectedBlock : (landingEdge==="end" ? available.at(-1) : available[0])); } }
       } catch (error) {
         if (!cancelled && (error as { name?: string }).name !== "RenderingCancelledException") {
           console.error("PDF rendering failed", error); setErrorMessage(error instanceof Error ? error.message : String(error)); setStatus("error");
@@ -381,7 +382,7 @@ export function PdfDafViewer({ zoom, selectedBlock, landingEdge = "start", onSel
   return <div className="pdfStage" style={{ width: size.width, height: size.height }}>
     <canvas ref={canvasRef} aria-label={`Оригинальный PDF, ${label}`} />
     {status === "loading" && <div className="pdfStatus">Загружаем оригинальный PDF…</div>}
-    {status === "error" && <div className="pdfStatus error">Не удалось связать лист с текстом.<small>{errorMessage}</small><a href={pdfUrl}>Открыть оригинал</a></div>}
+    {status === "error" && <div className="pdfStatus error">Не удалось открыть PDF.<small>{errorMessage}</small><a href={pdfUrl}>Открыть оригинал</a></div>}
     {status === "ready" && alignmentWarning && <div className="alignmentWarning">{tractateLabel} · {Object.keys(blocks).length ? "Лист размечен частично: " : "Лист открыт, интерактивная разметка отключена: "}{alignmentWarning}</div>}
     {status === "ready" && <div className="pdfInteraction" aria-label="Интерактивный слой оригинального листа" data-active-comment={activeComment ?? ""} data-gemara-cue={gemaraCue ? "yes" : "no"}>
       {selected?.lines.map((rect, index) => <span key={`selected-${index}`} className="textHighlight selectedHighlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} />)}
